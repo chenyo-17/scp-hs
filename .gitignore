@@ -1,0 +1,64 @@
+dist
+dist-*
+cabal-dev
+*.o
+*.hi
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+*.prof
+*.aux
+*.hp
+*.eventlog
+.ghc.environment.*
+.stack-work/
+.cabal-*
+
+# If you generate documentation locally
+doc/
+
+# Cabal sandbox directory
+.cabal-sandbox/
+
+# cabal package environment file
+cabal.project.local*
+
+# Benchmark output files
+*.bench
+
+# Nix
+result
+result-*
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Ignore build output
+**/out
+**/dist
+
+# Ignore settings containing user-specific data
+**/*.env
+
+# Ignore local npm dependencies
+node_modules
+jspm_packages
+
+# Editor directories and files
+.idea
+*.swp
+*.swo
+*.swn
+*.sublime-*
+.brackets.json
+.project
+*.tmproj
+*.komodoproject
+.tmtaskfiles
+.tmuxp.yaml
+.tmuxp.json
+*.kateproject
+*.sublime-project
+*.sublime-workspace
