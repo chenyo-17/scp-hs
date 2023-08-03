@@ -1,6 +1,6 @@
 module Functions.Transfer where
 
-import           Data.List (intercalate)
+import           Data.List          (intercalate)
 import           Data.Word
 
 data TfExpr
@@ -66,7 +66,7 @@ newtype Tf = Tf
 -- default Tf does not change anything
 defaultTf :: Tf
 defaultTf = Tf [trueClause]
-  where 
+  where
     trueClause = TfClause TfTrue (TfAssign [])
 
 -- simplify one TfCondition
@@ -77,6 +77,8 @@ simplifyCond cond =
     TfAnd c1 TfTrue -> simplifyCond c1
     TfAnd TfFalse _ -> TfFalse
     TfAnd _ TfFalse -> TfFalse
+    TfAnd c1 c2
+      | c1 == c2 -> c1
     -- TfAnd c1 c2 -> TfAnd (simplifyCond c1) (simplifyCond c2)
     -- if one of the simplified condition if TfFalse or TfTrue, then they remain
     -- so need to simplify again based on the simplified condition
@@ -93,6 +95,8 @@ simplifyCond cond =
     TfOr _ TfTrue -> TfTrue
     TfOr TfFalse c1 -> simplifyCond c1
     TfOr c1 TfFalse -> simplifyCond c1
+    TfOr c1 c2
+      | c1 == c2 -> c1
     -- TfOr c1 c2 -> TfOr (simplifyCond c1) (simplifyCond c2)
     TfOr c1 c2 ->
       let c1' = simplifyCond c1
@@ -113,22 +117,26 @@ simplifyCond cond =
       let c1' = simplifyCond $ TfNot c1
           c2' = simplifyCond $ TfNot c2
        in case (c1', c2') of
-            (TfTrue, _)  -> TfTrue
-            (_, TfTrue)  -> TfTrue
+            (TfTrue, _) -> TfTrue
+            (_, TfTrue) -> TfTrue
             (TfFalse, _) -> c2'
             (_, TfFalse) -> c1'
-            _            -> TfOr c1' c2'
+            _
+              | c1' == c2' -> c1'
+            _ -> TfOr c1' c2'
     -- TfNot (TfOr c1 c2) ->
     --   TfAnd (simplifyCond $ TfNot c1) (simplifyCond $ TfNot c2)
     TfNot (TfOr c1 c2) ->
       let c1' = simplifyCond $ TfNot c1
           c2' = simplifyCond $ TfNot c2
        in case (c1', c2') of
-            (TfTrue, _)  -> c2'
-            (_, TfTrue)  -> c1'
+            (TfTrue, _) -> c2'
+            (_, TfTrue) -> c1'
             (TfFalse, _) -> TfFalse
             (_, TfFalse) -> TfFalse
-            _            -> TfAnd c1' c2'
+            _
+              | c1' == c2' -> c1'
+            _ -> TfAnd c1' c2'
     -- compute simple arithmetic expression
     -- TODO: also consider other literals, e.g., strings, patterns
     TfCond (TfConst (TfInt i1)) op (TfConst (TfInt i2)) ->

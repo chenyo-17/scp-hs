@@ -99,16 +99,17 @@ bgpRmToTf = rmToTf TfTrue
   where
     rmToTf :: TfCondition -> BgpRm -> Tf
     rmToTf _ (BgpRm []) = Tf []
-    rmToTf conds (BgpRm (i@(RmItem act _ _):is)) = case act of 
-      -- if it is deny, the condition is recorded, 
+    rmToTf conds (BgpRm (i@(RmItem act _ _):is)) =
+      case act of
+      -- if it is deny, the condition is recorded,
       -- but it is not added to the tf as its assign is null
-      Deny -> rmToTf conds' (BgpRm is)
-      Permit -> Tf $ clause : tfClauses (rmToTf conds' (BgpRm is))
-      where
+        Deny   -> rmToTf conds' (BgpRm is)
+        Permit -> Tf $ clause : tfClauses (rmToTf conds' (BgpRm is))
         -- for each match in item i, convert it to a TfCondition
         -- and fold them with TfAnd
         -- then negate the result and and it with old conds
         -- prepend conds to item conditions
+      where
         TfClause c a = bgpItemToClause i
         clause = TfClause (TfAnd conds c) a
         negateCond = foldr (TfAnd . bgpMatchToCond) TfTrue (rmMatch i)
