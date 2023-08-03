@@ -1,6 +1,6 @@
 module Functions.Transfer where
 
-import           Data.List          (intercalate)
+import           Data.List (intercalate)
 import           Data.Word
 
 data TfExpr
@@ -63,6 +63,20 @@ newtype Tf = Tf
   { tfClauses :: [TfClause]
   } deriving (Eq)
 
+class Transfer a where
+  toTf :: a -> Tf
+  toSimpleTf :: a -> Tf
+  toSimpleTf = simplifyTf . toTf
+      -- simplify each Tf clause condition
+    where
+      simplifyTf :: Tf -> Tf
+      -- not use foldr as Tf is not a list type
+      simplifyTf (Tf []) = Tf []
+      -- this ugly cs is because Tf must be a newtype
+      simplifyTf (Tf (c:cs)) = Tf (c' : (tfClauses . simplifyTf . Tf) cs)
+        where
+          c' = TfClause (simplifyCond $ tfCond c) (tfAssign c)
+
 -- default Tf does not change anything
 defaultTf :: Tf
 defaultTf = Tf [trueClause]
@@ -70,6 +84,8 @@ defaultTf = Tf [trueClause]
     trueClause = TfClause TfTrue (TfAssign [])
 
 -- simplify one TfCondition
+-- TODO: cannot detect a == b && b == a are the same
+-- TODO: cannot detect a == c && a == b is false
 simplifyCond :: TfCondition -> TfCondition
 simplifyCond cond =
   case cond of
@@ -167,6 +183,10 @@ simplifyCond cond =
             else TfFalse
     _ -> cond
 
+-- produce the clause product of 2 tfs
+prod2Tfs :: Tf -> Tf -> [(TfClause, TfClause)]
+prod2Tfs tf1 tf2 = [(c1, c2) | c1 <- tfClauses tf1, c2 <- tfClauses tf2]
+
 -- concatenate two TfClauses to one TfClause
 -- the check of the second clause cond is based on the first clause's assign
 -- e.g.1, c1 = a > 10 -> a := 5
@@ -237,20 +257,6 @@ comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
     updateOrAppend (TfAssignItem v e) as = as' ++ [TfAssignItem v e]
       where
         as' = filter (\(TfAssignItem v' _) -> v /= v') as
-
-class Transfer a where
-  toTf :: a -> Tf
-  toSimpleTf :: a -> Tf
-  toSimpleTf = simplifyTf . toTf
-      -- simplify each Tf clause condition
-    where
-      simplifyTf :: Tf -> Tf
-      -- not use foldr as Tf is not a list type
-      simplifyTf (Tf []) = Tf []
-      -- this ugly cs is because Tf must be a newtype
-      simplifyTf (Tf (c:cs)) = Tf (c' : (tfClauses . simplifyTf . Tf) cs)
-        where
-          c' = TfClause (simplifyCond $ tfCond c) (tfAssign c)
 
 instance Show TfOp where
   show op =

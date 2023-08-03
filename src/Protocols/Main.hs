@@ -33,24 +33,20 @@ main = do
   let rmItem4 = RmItem Permit [] [SetBgpNextHop ip3]
   let rmImport1From2 = BgpRm [rmItem3, rmItem4]
   -- print BGP rms
-  putStrLn "BGP route maps:"
-  putStrLn $ "R1->R2:\n" ++ show rmExport1To2
-  putStrLn $ "R2<-R1:\n" ++ show rmImport2From1
-  putStrLn $ "R2->R1:\n" ++ show rmExport2To1
-  putStrLn $ "R1<-R2:\n" ++ show rmImport1From2
-  let sExport1To2 = Session 1 Export 2
-  let sImport2From1 = Session 2 Import 1
-  let sExport2To1 = Session 2 Export 1
-  let sImport1From2 = Session 1 Import 2
-  let rms =
-        [ (sExport1To2, rmExport1To2)
-        , (sImport2From1, rmImport2From1)
-        , (sExport2To1, rmExport2To1)
-        , (sImport1From2, rmImport1From2)
-        ]
-  -- print session tfs
-  let sessionTfs = addSessionTfs rms
-  putStrLn $ "sessionTfs:\n" ++ showSessionTfs sessionTfs
-  -- print link Tfs
-  let linkTfs = addLinkTfs rms
-  putStrLn $ "linkTfs:\n" ++ showLinkTfs linkTfs
+  putStrLn $ "BGPrm R1->R2:\n" ++ show rmExport1To2
+  putStrLn $ "BGPrm R2<-R1:\n" ++ show rmImport2From1
+  putStrLn $ "BGPrm R2->R1:\n" ++ show rmExport2To1
+  putStrLn $ "BGPrm R1<-R2:\n" ++ show rmImport1From2
+  let sExport1To2 = (Session 1 Export 2, rmExport1To2)
+  let sImport2From1 = (Session 2 Import 1, rmImport2From1)
+  let sExport2To1 = (Session 2 Export 1, rmExport2To1)
+  let sImport1From2 = (Session 1 Import 2, rmImport1From2)
+  let pair12 = (sExport2To1, sImport1From2)
+  let pair21 = (sExport1To2, sImport2From1)
+  -- print session and link tfs
+  putStrLn $ show (toSessionTf sExport2To1)
+  putStrLn $ show (toSessionTf sImport1From2)
+  putStrLn $ show (toSessionTf sExport1To2)
+  putStrLn $ show (toSessionTf sImport2From1)
+  putStrLn $ show (toLinkTf pair12)
+  putStrLn $ show (toLinkTf pair21)

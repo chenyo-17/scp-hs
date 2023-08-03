@@ -193,7 +193,7 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         Deny   -> RmItem action matches sets
 
 instance SessionTf BgpRm where
-  addSessionTf ss@(Session _ sDir sDst) rm ssTfs = sTf : ssTfs
+  toSessionTf (ss@(Session _ sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
     -- TODO: also and additional match, e.g., matchSession
     where
