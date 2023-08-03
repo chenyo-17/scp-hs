@@ -1,5 +1,3 @@
-{-# LANGUAGE InstanceSigs #-}
-
 module Protocols.BGP where
 
 import           Data.Word
@@ -100,15 +98,17 @@ bgpRmToTf :: BgpRm -> Tf
 bgpRmToTf = rmToTf TfTrue
   where
     rmToTf :: TfCondition -> BgpRm -> Tf
-    -- no need to add default item as this is handled by addSessionTf
     rmToTf _ (BgpRm []) = Tf []
-    rmToTf conds (BgpRm (i:is)) =
-      Tf $ clause : tfClauses (rmToTf conds' (BgpRm is))
+    rmToTf conds (BgpRm (i@(RmItem act _ _):is)) = case act of 
+      -- if it is deny, the condition is recorded, 
+      -- but it is not added to the tf as its assign is null
+      Deny -> rmToTf conds' (BgpRm is)
+      Permit -> Tf $ clause : tfClauses (rmToTf conds' (BgpRm is))
+      where
         -- for each match in item i, convert it to a TfCondition
         -- and fold them with TfAnd
         -- then negate the result and and it with old conds
         -- prepend conds to item conditions
-      where
         TfClause c a = bgpItemToClause i
         clause = TfClause (TfAnd conds c) a
         negateCond = foldr (TfAnd . bgpMatchToCond) TfTrue (rmMatch i)
@@ -192,17 +192,17 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         Deny   -> RmItem action matches sets
 
 instance SessionTf BgpRm where
-  addSessionTf ss (BgpRm is) ssTfs = sTf : ssTfs
-    -- first add a default BgpRmItem that just sets BgpFrom
-    -- then add additional sets, e.g., setBgpFrom
+  addSessionTf ss@(Session _ sDir sDst) rm ssTfs = sTf : ssTfs
+    -- if it is an import session, set BgpFrom in every item
     -- TODO: also and additional match, e.g., matchSession
     where
-      rm' = BgpRm $ is ++ [RmItem Deny [] []]
-      rm'' = setBgpFrom (ssDst ss) rm'
-      sTf = SessionProtoTf ss BGP (toSimpleTf rm'')
+      rm' =
+        if sDir == Import
+          then setBgpFrom sDst rm
+          else rm
+      sTf = SessionProtoTf ss BGP (toSimpleTf rm')
 
 instance Route BgpRoute where
-  mergeRoute :: BgpRoute -> BgpRoute -> Maybe BgpRoute
   mergeRoute = mergeBgpRoute
 
 instance Transfer BgpRm where

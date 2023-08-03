@@ -63,6 +63,12 @@ newtype Tf = Tf
   { tfClauses :: [TfClause]
   } deriving (Eq)
 
+-- default Tf does not change anything
+defaultTf :: Tf
+defaultTf = Tf [trueClause]
+  where 
+    trueClause = TfClause TfTrue (TfAssign [])
+
 -- simplify one TfCondition
 simplifyCond :: TfCondition -> TfCondition
 simplifyCond cond =
@@ -77,7 +83,12 @@ simplifyCond cond =
     TfAnd c1 c2 ->
       let c1' = simplifyCond c1
           c2' = simplifyCond c2
-       in simplifyCond $ TfAnd c1' c2'
+       in case (c1', c2') of
+            (TfTrue, _)  -> c2'
+            (_, TfTrue)  -> c1'
+            (TfFalse, _) -> TfFalse
+            (_, TfFalse) -> TfFalse
+            _            -> TfAnd c1' c2'
     TfOr TfTrue _ -> TfTrue
     TfOr _ TfTrue -> TfTrue
     TfOr TfFalse c1 -> simplifyCond c1
@@ -86,7 +97,12 @@ simplifyCond cond =
     TfOr c1 c2 ->
       let c1' = simplifyCond c1
           c2' = simplifyCond c2
-       in simplifyCond $ TfOr c1' c2'
+       in case (c1', c2') of
+            (TfTrue, _)  -> TfTrue
+            (_, TfTrue)  -> TfTrue
+            (TfFalse, _) -> c2'
+            (_, TfFalse) -> c1'
+            _            -> TfOr c1' c2'
     TfNot TfTrue -> TfFalse
     TfNot TfFalse -> TfTrue
     TfNot (TfNot c1) -> simplifyCond c1
@@ -96,13 +112,23 @@ simplifyCond cond =
     TfNot (TfAnd c1 c2) ->
       let c1' = simplifyCond $ TfNot c1
           c2' = simplifyCond $ TfNot c2
-       in simplifyCond $ TfOr c1' c2'
+       in case (c1', c2') of
+            (TfTrue, _)  -> TfTrue
+            (_, TfTrue)  -> TfTrue
+            (TfFalse, _) -> c2'
+            (_, TfFalse) -> c1'
+            _            -> TfOr c1' c2'
     -- TfNot (TfOr c1 c2) ->
     --   TfAnd (simplifyCond $ TfNot c1) (simplifyCond $ TfNot c2)
     TfNot (TfOr c1 c2) ->
       let c1' = simplifyCond $ TfNot c1
           c2' = simplifyCond $ TfNot c2
-       in simplifyCond $ TfAnd c1' c2'
+       in case (c1', c2') of
+            (TfTrue, _)  -> c2'
+            (_, TfTrue)  -> c1'
+            (TfFalse, _) -> TfFalse
+            (_, TfFalse) -> TfFalse
+            _            -> TfAnd c1' c2'
     -- compute simple arithmetic expression
     -- TODO: also consider other literals, e.g., strings, patterns
     TfCond (TfConst (TfInt i1)) op (TfConst (TfInt i2)) ->
@@ -132,6 +158,77 @@ simplifyCond cond =
             then TfTrue
             else TfFalse
     _ -> cond
+
+-- concatenate two TfClauses to one TfClause
+-- the check of the second clause cond is based on the first clause's assign
+-- e.g.1, c1 = a > 10 -> a := 5
+--        c2 =  a < 6 -> b := 3
+--    returns c3 = a > 10 -> a := 5, b := 3
+-- e.g.2, c1 = a > 10 -> b := 10
+--        c2 = a < 6 -> a := 5
+--    returns c3 = a > 10 -> b := 10, a := 5
+-- the second assign overrides the first one if there assign the same variable
+concatTfClause :: (TfClause, TfClause) -> Maybe TfClause
+concatTfClause (TfClause c1 a1, TfClause c2 a2) =
+  if c' == TfFalse
+    then Nothing
+    else Just $ TfClause c' a'
+  where
+    -- combine two conditions
+    c' = simplifyCond $ TfAnd c1 (substCond c2 a1)
+    -- combine two assigns
+    a' = comb2Assigns a1 a2
+
+-- substitute the variable in the condition with the assign
+-- and simplify the condition
+-- TODO: support numeric conditions, e.g., a + 10 > 20 && a < 10
+substCond :: TfCondition -> TfAssign -> TfCondition
+-- if the assign of export (first clause) is null
+-- then the new condition is always false
+substCond _ TfAssignNull = TfFalse
+substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
+  where
+    -- substitute all instances of v in cond
+    substEach :: TfAssignItem -> TfCondition -> TfCondition
+    substEach a@(TfAssignItem (TfVar v) e) cond' =
+      case cond' of
+        -- the variable can only appears in TfCond as a single var
+        TfCond (TfVar v') op e2
+          | v == v' -> TfCond e op e2
+        TfCond e1 op (TfVar v')
+          | v == v' -> TfCond e1 op e
+        TfNot c -> TfNot $ substEach a c
+        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
+        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+        _ -> cond'
+    -- the key in an tfAssign must be a var
+    substEach _ cond' = cond'
+
+-- combine two assigns, the second one overrides the first one
+-- if there is null, the null is propagated
+comb2Assigns :: TfAssign -> TfAssign -> TfAssign
+-- if some assign is null, return the other one
+-- in practice, the argument cannot be null, as it is already filtered
+-- in toTf function
+comb2Assigns TfAssignNull a = a
+comb2Assigns a TfAssignNull = a
+-- the result cannot be null, as the null case has been handled
+comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
+  where
+    -- concat two assign lists into one,
+    -- each element is an TfAssignItem
+    -- the second is appended to the first one
+    assignList =
+      let TfAssign l1 = a1
+          TfAssign l2 = a2
+      -- reverse the order because of foldr starts from the end
+       in l2 ++ l1
+    -- if the variable is already assigned in the list, delete it first
+    -- append the new assign to the list
+    updateOrAppend :: TfAssignItem -> [TfAssignItem] -> [TfAssignItem]
+    updateOrAppend (TfAssignItem v e) as = as' ++ [TfAssignItem v e]
+      where
+        as' = filter (\(TfAssignItem v' _) -> v /= v') as
 
 class Transfer a where
   toTf :: a -> Tf

@@ -91,6 +91,11 @@ executable protocol
         iproute ^>=1.7.10,
     hs-source-dirs: src
     default-language: Haskell2010
+    other-modules:
+        Utilities.Ip
+        Protocols.Protocol
+        Protocols.BGP
+        Functions.Transfer
 
 -- test-suite scp-hs-test
 --     -- Import common warning flags.
