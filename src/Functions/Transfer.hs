@@ -45,9 +45,10 @@ data TfCondition
   deriving (Eq)
 
 -- the key is CVar
-data TfAssignItem =
-  TfAssignItem TfExpr TfExpr
-  deriving (Eq)
+data TfAssignItem = TfAssignItem
+  { assignVar   :: TfExpr
+  , assignValue :: TfExpr
+  } deriving (Eq)
 
 data TfAssign
   = TfAssign [TfAssignItem]
@@ -76,6 +77,13 @@ class Transfer a where
       simplifyTf (Tf (c:cs)) = Tf (c' : (tfClauses . simplifyTf . Tf) cs)
         where
           c' = TfClause (simplifyCond $ tfCond c) (tfAssign c)
+
+-- add a TfAssignItem to a TfAssign
+addTfAssignItem :: TfExpr -> TfExpr -> TfAssign -> TfAssign
+addTfAssignItem var value assign =
+  case assign of
+    TfAssign items -> TfAssign $ TfAssignItem var value : items
+    TfAssignNull   -> TfAssignNull
 
 -- default Tf does not change anything
 defaultTf :: Tf
@@ -196,8 +204,8 @@ prod2Tfs tf1 tf2 = [(c1, c2) | c1 <- tfClauses tf1, c2 <- tfClauses tf2]
 --        c2 = a < 6 -> a := 5
 --    returns c3 = a > 10 -> b := 10, a := 5
 -- the second assign overrides the first one if there assign the same variable
-concatTfClause :: (TfClause, TfClause) -> Maybe TfClause
-concatTfClause (TfClause c1 a1, TfClause c2 a2) =
+concatTfClauses :: (TfClause, TfClause) -> Maybe TfClause
+concatTfClauses (TfClause c1 a1, TfClause c2 a2) =
   if c' == TfFalse
     then Nothing
     else Just $ TfClause c' a'
@@ -257,6 +265,43 @@ comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
     updateOrAppend (TfAssignItem v e) as = as' ++ [TfAssignItem v e]
       where
         as' = filter (\(TfAssignItem v' _) -> v /= v') as
+
+-- return the variable that indicates the value of the variable remains the same
+-- as the last occurrence
+keepOldVar :: TfExpr -> TfExpr
+keepOldVar expr =
+  case expr of
+    TfVar v -> TfVar $ v ++ "Old" -- assume no protocol will use this suffix in the variable name
+    _       -> expr
+
+-- append a suffix to all TfVar in the clause
+appendClauseVar :: String -> TfClause -> TfClause
+appendClauseVar str (TfClause cond assign) =
+  TfClause (appendCondVar str cond) (appendAssignVar str assign)
+
+-- append a suffix to all TfVar in the condition
+appendCondVar :: String -> TfCondition -> TfCondition
+appendCondVar str cond =
+  case cond of
+    TfCond e1 op e2 -> TfCond (appendExprVar str e1) op (appendExprVar str e2)
+    TfNot c         -> TfNot $ appendCondVar str c
+    TfAnd c1 c2     -> TfAnd (appendCondVar str c1) (appendCondVar str c2)
+    TfOr c1 c2      -> TfOr (appendCondVar str c1) (appendCondVar str c2)
+    _               -> cond
+
+-- append a suffix to all values in the assign
+appendAssignVar :: String -> TfAssign -> TfAssign
+appendAssignVar _ TfAssignNull = TfAssignNull
+appendAssignVar str (TfAssign as) =
+  TfAssign
+    $ map (\(TfAssignItem v e) -> TfAssignItem v (appendExprVar str e)) as
+
+-- append a suffix to all TfVar in the expression
+appendExprVar :: String -> TfExpr -> TfExpr
+appendExprVar str expr =
+  case expr of
+    TfVar v -> TfVar $ v ++ str
+    _       -> expr
 
 instance Show TfOp where
   show op =

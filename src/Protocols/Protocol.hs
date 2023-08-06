@@ -1,5 +1,10 @@
+{-# LANGUAGE ConstrainedClassMethods #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE TypeFamilies            #-}
+
 module Protocols.Protocol where
 
+import           Data.Kind          (Type)
 import           Data.Word
 import           Functions.Transfer
 
@@ -10,6 +15,23 @@ data SessionDir
   | Export
   deriving (Show, Eq)
 
+data ProtoTfClause a = ProtoTfClause
+  { pCond  :: TfCondition
+  , pRoute :: Maybe a -- Nothing means null route
+  } deriving (Eq)
+
+instance (Show a) => Show (ProtoTfClause a) where
+  show (ProtoTfClause cond route) =
+    show cond ++ " -> " ++ maybe "null" show route
+
+-- a is an instance of Route
+newtype ProtoTf a = ProtoTf
+  { pTfClauses :: [ProtoTfClause a]
+  } deriving (Eq)
+
+instance (Show a) => Show (ProtoTf a) where
+  show (ProtoTf clauses) = unlines $ map show clauses
+
 -- a Import b means this is an import session at a to apply on b
 -- a Export b means this is an export session at a to apply on b
 data Session = Session
@@ -17,6 +39,10 @@ data Session = Session
   , ssDir :: SessionDir
   , ssDst :: RouterId
   } deriving (Eq)
+
+-- user API for creating a session
+toSession :: RouterId -> SessionDir -> RouterId -> Session
+toSession = Session
 
 instance Show Session where
   show (Session src dir dst) =
@@ -35,31 +61,26 @@ data Link = Link
 instance Show Link where
   show (Link src dst) = show src ++ "<-" ++ show dst
 
-data Protocol =
-  BGP
-  deriving (Show, Eq)
-
-data SessionProtoTf = SessionProtoTf
+data SessionProtoTf a = SessionProtoTf
   { session :: Session
-  , ssProto :: Protocol
-  , ssTf    :: Tf
+  , ssTf    :: ProtoTf a
   } deriving (Eq)
 
 -- TODO: automatically compute indentation
-instance Show SessionProtoTf where
-  show (SessionProtoTf ss proto tf) =
-    "sessionTf " ++ show ss ++ " " ++ show proto ++ ":\n" ++ show tf
+instance (Show a) => Show (SessionProtoTf a) where
+  show (SessionProtoTf ss tf) = "sessionTf " ++ show ss ++ ":\n" ++ show tf
 
-data LinkProtoTf = LinkProtoTf
-  { link   :: Link
-  , lProto :: Protocol
-  , lTf    :: Tf
-  } deriving (Eq)
-
-instance Show LinkProtoTf where
-  show (LinkProtoTf lk proto tf) =
-    "linkTf " ++ show lk ++ " " ++ show proto ++ ":\n" ++ show tf
-
+-- data LinkProtoTf = LinkProtoTf
+--   { link   :: Link
+--   , lTf    :: ProtoTf
+--   } deriving (Eq)
+-- data RouterProtoTf = RouterProtoTf
+--   { router :: RouterId
+--   , nTf    :: Tf
+--   } deriving (Eq)
+-- instance Show LinkProtoTf where
+--   show (LinkProtoTf lk proto tf) =
+--     "linkTf " ++ show lk ++ " " ++ show proto ++ ":\n" ++ show tf
 -- a session function is a pair of session and a,
 -- where a is an instance of SessionTf
 type SessionF a = (Session, a)
@@ -71,41 +92,111 @@ type SessionFPair a = (SessionF a, SessionF a)
 class Route a where
   -- return the better route if two routes are comparable
   mergeRoute :: a -> a -> Maybe a
+  -- convert a route to a tf assign
+  toTfAssign :: a -> TfAssign
 
-class SessionTf a where
-  -- given a session functions, convert to a session tf
-  toSessionTf :: SessionF a -> SessionProtoTf
-  -- given a pair of session functions, convert to a link tf
-  -- TODO: finding the right pair of session tfs
-  -- is the responsibility of the config parser
-  -- the goal is to compute each router's node tf concurrently with lazy evaluation
-  -- e.g., a link tf is only computed when the network tf requires
-  toLinkTf :: SessionFPair a -> LinkProtoTf
-  toLinkTf (sfe, sfi@(ssi, _)) = LinkProtoTf l p linkTf
+class ProtocolTf a where
+  -- declare the relationship between a protocol and its route type
+  type RouteType a :: Type
+  -- given a session function, convert to a session proto tf
+  toSsProtoTf ::
+       (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
+  -- first apply toSsProtoTf, then simplify the conditions
+  toSimpleSsProtoTf ::
+       (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
+  toSimpleSsProtoTf sF = sPTf {ssTf = simplePTf}
     where
-      sTfe = toSessionTf sfe
-      sTfi = toSessionTf sfi
-      l = Link (ssSrc ssi) (ssDst ssi)
-      p = ssProto sTfe
-      linkTf = foldr concatClauses (Tf []) (prod2Tfs (ssTf sTfe) (ssTf sTfi))
-        where
-          concatClauses :: (TfClause, TfClause) -> Tf -> Tf
-          -- if 2 clauses can concat, add it to the new tf
-          -- otherwise, do nothing
-          concatClauses (c1, c2) tf =
-            case c' of
-              Just c  -> Tf (c : tfClauses tf)
-              Nothing -> tf
-            where
-              c' = concatTfClause (c1, c2)
-
--- reverse the session direction
-reverseDir :: SessionDir -> SessionDir
-reverseDir dir =
-  case dir of
-    Import -> Export
-    Export -> Import
-
--- reverse the session
-reverseSs :: Session -> Session
-reverseSs (Session src dir dst) = Session dst (reverseDir dir) src
+      sPTf = toSsProtoTf sF
+      simplePTf = ProtoTf (map simpleCond ((pTfClauses . ssTf) sPTf))
+      simpleCond (ProtoTfClause cond route) =
+        ProtoTfClause (simplifyCond cond) route
+--   -- given a pair of session functions, convert to a link tf
+--   -- TODO: finding the right pair of session tfs
+--   -- is the responsibility of the config parser
+--   -- the goal is to compute each router's node tf concurrently with lazy evaluation
+--   -- e.g., a link tf is only computed when the network tf requires
+--   toLinkProtoTf :: SessionFPair a -> LinkProtoTf
+--   toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l p linkTf
+--     where
+--       sTfe = toSsProtoTf sfe
+--       sTfi = toSsProtoTf sfi
+--       l = Link (ssSrc ssi) (ssDst ssi)
+--       p = ssProto sTfe
+--       linkTf = foldr concatClauses (Tf []) (prod2Tfs (ssTf sTfe) (ssTf sTfi))
+--         where
+--           concatClauses :: (TfClause, TfClause) -> Tf -> Tf
+--           -- if 2 clauses can concat, add it to the new tf
+--           -- otherwise, do nothing
+--           concatClauses (c1, c2) tf =
+--             case c' of
+--               Just c  -> Tf (c : tfClauses tf)
+--               Nothing -> tf
+--             where
+--               c' = concatTfClauses (c1, c2)
+-- -- given a list of link tfs which has the same source router,
+-- -- TODO: takes as argument all nodes' link tfs
+-- -- convert them to a router tf
+-- -- the link tfs cannot be empty
+-- toRouterProtoTf :: [LinkProtoTf] -> RouterProtoTf
+-- toRouterProtoTf lTfs@(LinkProtoTf (Link src dst) p lTf:_) =
+--   RouterProtoTf src p routerTf
+--   where
+--     -- the router tf is computed by checking every pair of link tfs a, b
+--     -- for each clause pair of a and b (ca, cb), compte the condition when one assign is better than the other
+--     -- if the condition is not false, and the condition and the conditions of ca and cb to c'
+--     -- the new assign is the better assign in ca and cb, and the assign should cover all setable route attributes
+--     -- so ca, cb pair leads to at most 2 new clauses in the router tf
+--     -- in each new clause, the variable is updated to include the router index
+--     routerTf = computeRouterTf (Tf []) lTfs
+--     -- given the current Tf, and a list of link tfs,
+--     -- combing the head linkTf and each of the rest linkTfs and compute the new tf clauses
+--     computeRouterTf :: Tf -> [LinkProtoTf] -> Tf
+--     computeRouterTf accTf [] = accTf
+--     computeRouterTf accTf (curLTf@(LinkProtoTf (Link _ cDst) _ curTf):restLTfs) =
+--       computeRouterTf accTf' restLTfs
+--       where
+--         accTf' = foldr concatTfs accTf restLTfs
+--         concatTfs :: LinkProtoTf -> Tf -> Tf
+--         -- combine curTf and each of restTfs, and update the accTf
+--         concatTfs restLTf@(LinkProtoTf (Link _ rDst) _ restTf) accTf =
+--           Tf (tfClauses accTf ++ newTfClauses)
+--           where
+--             newTfClauses =
+--               foldr (mergeLTfClauses p (cDst, rDst)) [] (prod2Tfs curTf restTf)
+-- -- reverse the session direction
+-- reverseDir :: SessionDir -> SessionDir
+-- reverseDir dir =
+--   case dir of
+--     Import -> Export
+--     Export -> Import
+-- -- reverse the session
+-- reverseSs :: Session -> Session
+-- reverseSs (Session src dir dst) = Session dst (reverseDir dir) src
+-- toSession :: RouterId -> SessionDir -> RouterId -> Session
+-- toSession = Session
+-- -- given a pair of tf clauses ca and cb, and their associated dst routers (second argument),
+-- -- first convert each clause assign to protocol route ra and rb
+-- -- then compute the conditions when ra is better than rb
+-- -- if the condition is not false, and the condition and the conditions of ca and cb to c'
+-- -- convert back the better route to assign, and construct the new clause
+-- mergeLTfClauses ::
+--      Protocol
+--   -> (RouterId, RouterId)
+--   -> (TfClause, TfClause)
+--   -> [TfClause]
+--   -> [TfClause]
+-- mergeLTfClauses p (r1, r2) (c1, c2) accC = accC'
+--   where
+--     -- append _r1 and _r2 to all variable names in c1 and c2
+--     c1'@(TfClause cond1' assign1') = appendClauseVar (show r1) c1
+--     c2'@(TfClause cond2' assign2') = appendClauseVar (show r2) c2
+--     prefer1Cond = preferFstCond p assign1' assign2'
+--     prefer2Cond = preferFstCond p assign2' assign1'
+--     curCond = TfAnd cond1' cond2'
+--     -- TODO: if prefer1Cond is false, it is discarded
+--     newC =
+--       [ TfClause (TfAnd curCond prefer1Cond) assign1'
+--       , TfClause (TfAnd curCond prefer2Cond) assign2'
+--       ]
+--     accC' = accC ++ newC
+--     -- prefer1Cond = prefer

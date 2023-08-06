@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module Protocols.BGP where
 
 import           Data.Word
@@ -6,15 +7,20 @@ import           Protocols.Protocol
 import           Utilities.Ip
 
 data BgpRoute = BgpRoute
-  { localPref   :: Word32
-  , bgpNextHop  :: Ip
-  , asPath      :: [AsN]
+  { localPref   :: Maybe Word32
+  , bgpNextHop  :: Maybe Ip
   -- only consider a single community
-  , community   :: Community
-  , bgpIpPrefix :: IpPrefix
-  -- additional attributes for tf
+  , community   :: Maybe Community
+  , bgpIpPrefix :: Maybe IpPrefix
+  -- additional attributes for tf, guaranteed to be set
+  -- they are used to include protocol internal logic,
+  -- e.g., no send back
   , bgpFrom     :: RouterId
-  } deriving (Show, Eq)
+  } deriving (Eq)
+
+-- routerId 0 is reserved for default route
+defaultBgpRoute :: BgpRoute
+defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing 0
 
 data BgpAttr
   = LocalPref
@@ -24,8 +30,6 @@ data BgpAttr
   | BgpIpPrefix
   | BgpFrom
   deriving (Show, Eq)
-
-type AsN = Word16
 
 type Community = Word32
 
@@ -75,6 +79,25 @@ newtype BgpRm =
   BgpRm [RmItem]
   deriving (Eq)
 
+-- convert a BgpAttr to a TfExpr
+bgpAttrToExpr :: BgpAttr -> TfExpr
+bgpAttrToExpr attr =
+  case attr of
+    LocalPref    -> TfVar "LocalPref"
+    BgpNextHop   -> TfVar "BgpNextHop"
+    AsPath       -> TfVar "AsPath"
+    BgpCommunity -> TfVar "Community"
+    BgpIpPrefix  -> TfVar "BgpIpPrefix"
+    BgpFrom      -> TfVar "BgpFrom"
+
+-- user constructor API for RmItem
+toRmItem :: Action -> [BgpMatch] -> [BgpSet] -> RmItem
+toRmItem = RmItem
+
+-- user constructor API for BgpRm
+toBgpRm :: [RmItem] -> BgpRm
+toBgpRm = BgpRm
+
 -- merge 2 BGP routes if they have the same IP prefix
 -- the merged route is one of the 2 routes with the highest localPref
 -- or the one with the shortest, or the one with a lower nextHop
@@ -87,52 +110,96 @@ mergeBgpRoute r1 r2
     merge ra rb
       | localPref ra > localPref rb = ra
       | localPref ra < localPref rb = rb
-      | length (asPath ra) < length (asPath rb) = ra
-      | length (asPath ra) > length (asPath rb) = rb
+      -- | length (asPath ra) < length (asPath rb) = ra
+      -- | length (asPath ra) > length (asPath rb) = rb
       | bgpNextHop ra < bgpNextHop rb = ra
       | bgpNextHop ra > bgpNextHop rb = rb
       | otherwise = ra
 
--- convert a BgpRm to a Tf
-bgpRmToTf :: BgpRm -> Tf
-bgpRmToTf = rmToTf TfTrue
+-- convert a BgpRm to a ProtoTf
+bgpRmToProtoTf :: BgpRm -> ProtoTf BgpRoute
+bgpRmToProtoTf = rmToTf TfTrue
   where
-    rmToTf :: TfCondition -> BgpRm -> Tf
-    rmToTf _ (BgpRm []) = Tf []
+    rmToTf :: TfCondition -> BgpRm -> ProtoTf BgpRoute
+    rmToTf _ (BgpRm []) = ProtoTf []
     rmToTf conds (BgpRm (i@(RmItem act _ _):is)) =
       case act of
       -- if it is deny, the condition is recorded,
       -- but it is not added to the tf as its assign is null
         Deny   -> rmToTf conds' (BgpRm is)
-        Permit -> Tf $ clause : tfClauses (rmToTf conds' (BgpRm is))
+        Permit -> ProtoTf $ clause : pTfClauses (rmToTf conds' (BgpRm is))
         -- for each match in item i, convert it to a TfCondition
         -- and fold them with TfAnd
         -- then negate the result and and it with old conds
         -- prepend conds to item conditions
       where
-        TfClause c a = bgpItemToClause i
-        clause = TfClause (TfAnd conds c) a
+        ProtoTfClause c a = bgpItemToClause i
+        clause = ProtoTfClause (TfAnd conds c) a
         negateCond = foldr (TfAnd . bgpMatchToCond) TfTrue (rmMatch i)
         conds' = TfAnd conds (TfNot negateCond)
 
 -- convert a BgpItem to a TfClause
-bgpItemToClause :: RmItem -> TfClause
+bgpItemToClause :: RmItem -> ProtoTfClause BgpRoute
 bgpItemToClause (RmItem action matches sets) =
   case action of
-    Permit -> TfClause conds assigns
-    Deny   -> TfClause conds TfAssignNull
+    Permit -> ProtoTfClause conds (Just assigns)
+    Deny   -> ProtoTfClause conds Nothing
   where
     conds = foldr (TfAnd . bgpMatchToCond) TfTrue matches
-    assigns = foldr stepSet (TfAssign []) sets
-    -- accumulate all BgpSets into a single TfAssign
-    stepSet :: BgpSet -> TfAssign -> TfAssign
-    stepSet s = combine (bgpSetToAssign s)
-        -- combine 2 TfAssigns into a single TfAssign
+    assigns = foldr stepSet defaultBgpRoute sets
+    -- accumulate all BgpSets into a single BgpRoute
+    stepSet :: BgpSet -> BgpRoute -> BgpRoute
+    stepSet s r =
+      case s of
+        SetLocalPref lp  -> r {localPref = Just lp}
+        SetBgpNextHop nh -> r {bgpNextHop = Just nh}
+        SetCommunity c   -> r {community = Just c}
+        SetBgpFrom f     -> r {bgpFrom = f}
+
+-- -- convert a BgpRoute to a TfAssign
+bgpRouteToAssign :: BgpRoute -> TfAssign
+bgpRouteToAssign rte =
+  (fromBgpFrom
+     . fromLocalPref
+     . fromBgpNextHop
+     . fromBgpCommunity
+     . fromIpPrefix)
+    (TfAssign [])
+  where
+    -- TODO: this is ugly
+    fromIpPrefix :: TfAssign -> TfAssign
+    -- assume ip prefix is never reset
+    fromIpPrefix = addTfAssignItem ipPrefixVar (keepOldVar ipPrefixVar)
       where
-        combine :: TfAssign -> TfAssign -> TfAssign
-        combine (TfAssign a1) (TfAssign a2) = TfAssign (a1 ++ a2)
-        combine TfAssignNull _              = TfAssignNull
-        combine _ TfAssignNull              = TfAssignNull
+        ipPrefixVar = bgpAttrToExpr BgpIpPrefix
+    fromBgpCommunity :: TfAssign -> TfAssign
+    fromBgpCommunity ass =
+      case community rte of
+        Nothing   -> addTfAssignItem communityVar (keepOldVar communityVar) ass
+          -- keep old value
+        Just comm -> addTfAssignItem communityVar (TfConst (TfInt comm)) ass
+      where
+        communityVar = bgpAttrToExpr BgpCommunity
+    fromBgpNextHop :: TfAssign -> TfAssign
+    fromBgpNextHop ass =
+      case bgpNextHop rte of
+        Nothing -> addTfAssignItem nextHopVar (keepOldVar nextHopVar) ass
+        Just nh -> addTfAssignItem nextHopVar (TfConst (TfInt (fromIpw nh))) ass
+      where
+        nextHopVar = bgpAttrToExpr BgpNextHop
+    fromLocalPref :: TfAssign -> TfAssign
+    fromLocalPref ass =
+      case localPref rte of
+        Nothing -> addTfAssignItem localPrefVar (keepOldVar localPrefVar) ass
+        Just lp -> addTfAssignItem localPrefVar (TfConst (TfInt lp)) ass
+      where
+        localPrefVar = bgpAttrToExpr LocalPref
+    fromBgpFrom :: TfAssign -> TfAssign
+    -- bgp from must be already set
+    fromBgpFrom = addTfAssignItem bgpFromVar (TfConst (TfInt fr))
+      where
+        bgpFromVar = bgpAttrToExpr BgpFrom
+        fr = bgpFrom rte
 
 -- convert a BgpMatch to a TfCondition
 bgpMatchToCond :: BgpMatch -> TfCondition
@@ -142,20 +209,6 @@ bgpMatchToCond m =
     -- for k prefix list items, there are 2 * k conditions to be Or'ed
     MatchIpPrefix pl  -> foldr (TfOr . plItemToCond) TfFalse pl
     MatchCommunity cl -> foldr (TfOr . clItemToCond) TfFalse cl
-
--- convert a BgpSet to a TfAssign
-bgpSetToAssign :: BgpSet -> TfAssign
-bgpSetToAssign s =
-  case s of
-    SetLocalPref lp ->
-      TfAssign [TfAssignItem (bgpAttrToExpr LocalPref) (TfConst (TfInt lp))]
-    SetBgpNextHop nh ->
-      TfAssign [TfAssignItem (bgpAttrToExpr BgpNextHop) (TfConst (TfInt nhw))]
-      where nhw = fromIpw nh
-    SetCommunity c ->
-      TfAssign [TfAssignItem (bgpAttrToExpr BgpCommunity) (TfConst (TfInt c))]
-    SetBgpFrom f ->
-      TfAssign [TfAssignItem (bgpAttrToExpr BgpFrom) (TfConst (TfInt f))]
 
 -- convert a BgpPlItem to a TfCondition
 plItemToCond :: BgpPlItem -> TfCondition
@@ -170,18 +223,7 @@ plItemToCond pli = TfAnd geIpLow leIpHiw
 clItemToCond :: BgpClItem -> TfCondition
 clItemToCond ci = TfCond (bgpAttrToExpr BgpCommunity) TfEq (TfConst (TfInt ci))
 
--- convert a BgpAttr to a TfExpr
-bgpAttrToExpr :: BgpAttr -> TfExpr
-bgpAttrToExpr attr =
-  case attr of
-    LocalPref    -> TfVar "LocalPref"
-    BgpNextHop   -> TfVar "BgpNextHop"
-    AsPath       -> TfVar "AsPath"
-    BgpCommunity -> TfVar "Community"
-    BgpIpPrefix  -> TfVar "BgpIpPrefix"
-    BgpFrom      -> TfVar "BgpFrom"
-
--- add a setBgpFrom in each BgpRmItem
+-- add a setBgpFrom in each item of a rm if it is an import session
 setBgpFrom :: RouterId -> BgpRm -> BgpRm
 setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
   where
@@ -192,8 +234,9 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         Permit -> RmItem action matches (SetBgpFrom from : sets)
         Deny   -> RmItem action matches sets
 
-instance SessionTf BgpRm where
-  toSessionTf (ss@(Session _ sDir sDst), rm) = sTf
+instance ProtocolTf BgpRm where
+  type RouteType BgpRm = BgpRoute
+  toSsProtoTf (ss@(Session _ sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
     -- TODO: also and additional match, e.g., matchSession
     where
@@ -201,13 +244,11 @@ instance SessionTf BgpRm where
         if sDir == Import
           then setBgpFrom sDst rm
           else rm
-      sTf = SessionProtoTf ss BGP (toSimpleTf rm')
+      sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
 instance Route BgpRoute where
   mergeRoute = mergeBgpRoute
-
-instance Transfer BgpRm where
-  toTf = bgpRmToTf
+  toTfAssign = bgpRouteToAssign
 
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl
@@ -225,3 +266,16 @@ instance Show RmItem where
 
 instance Show BgpRm where
   show (BgpRm rmItems) = unlines $ map show rmItems
+
+instance Show BgpRoute where
+  show r =
+    "ip-prefix: "
+      ++ show (bgpIpPrefix r)
+      ++ ", next-hop: "
+      ++ show (bgpNextHop r)
+      ++ ", community: "
+      ++ show (community r)
+      ++ ", local-pref: "
+      ++ show (localPref r)
+      ++ ", from: "
+      ++ show (bgpFrom r)
