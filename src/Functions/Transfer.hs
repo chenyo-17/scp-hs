@@ -1,6 +1,6 @@
 module Functions.Transfer where
 
-import           Data.List (intercalate, isSuffixOf)
+import           Data.List (intercalate)
 import           Data.Word
 
 data TfExpr
@@ -226,19 +226,17 @@ substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
   where
     -- substitute all instances of v in cond
     substEach :: TfAssignItem -> TfCondition -> TfCondition
-    substEach a@(TfAssignItem (TfVar v) e) cond'
-      | isKeepOldVar e = cond'  -- not substitute if the value is keepOldVar
-      | otherwise =
-        case cond' of
+    substEach a@(TfAssignItem (TfVar v) e) cond' =
+      case cond' of
         -- the variable can only appears in TfCond as a single var
-          TfCond (TfVar v') op e2
-            | v == v' -> TfCond e op e2
-          TfCond e1 op (TfVar v')
-            | v == v' -> TfCond e1 op e
-          TfNot c -> TfNot $ substEach a c
-          TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
-          TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
-          _ -> cond'
+        TfCond (TfVar v') op e2
+          | v == v' -> TfCond e op e2
+        TfCond e1 op (TfVar v')
+          | v == v' -> TfCond e1 op e
+        TfNot c -> TfNot $ substEach a c
+        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
+        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+        _ -> cond'
     -- the key in an tfAssign must be a var
     substEach _ cond' = cond'
 
@@ -270,17 +268,15 @@ comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
 
 -- return the variable that indicates the value of the variable remains the same
 -- as the last occurrence
-keepOldVar :: TfExpr -> TfExpr
-keepOldVar expr =
-  case expr of
-    TfVar v -> TfVar $ v ++ "Old" -- assume no protocol will use this suffix in the variable name
-    _       -> expr
-
--- check if the expr is keepOldVar
-isKeepOldVar :: TfExpr -> Bool
-isKeepOldVar (TfVar v) = "Old" `isSuffixOf` v
-isKeepOldVar _         = False
-
+-- keepOldVar :: TfExpr -> TfExpr
+-- keepOldVar expr =
+--   case expr of
+--     TfVar v -> TfVar $ v ++ "Old" -- assume no protocol will use this suffix in the variable name
+--     _       -> expr
+-- -- check if the expr is keepOldVar
+-- isKeepOldVar :: TfExpr -> Bool
+-- isKeepOldVar (TfVar v) = "Old" `isSuffixOf` v
+-- isKeepOldVar _         = False
 -- append a suffix to all TfVar in the clause
 appendClauseVar :: String -> TfClause -> TfClause
 appendClauseVar str (TfClause cond assign) =

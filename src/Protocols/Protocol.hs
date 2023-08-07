@@ -76,12 +76,16 @@ data LinkProtoTf a = LinkProtoTf
   , lTf  :: ProtoTf a
   } deriving (Eq)
 
--- data RouterProtoTf = RouterProtoTf
---   { router :: RouterId
---   , nTf    :: Tf
---   } deriving (Eq)
 instance (Show a) => Show (LinkProtoTf a) where
   show (LinkProtoTf lk tf) = "linkTf " ++ show lk ++ ":\n" ++ show tf
+
+data RouterProtoTf a = RouterProtoTf
+  { router :: RouterId
+  , rTf    :: ProtoTf a
+  } deriving (Eq)
+
+instance (Show a) => Show (RouterProtoTf a) where
+  show (RouterProtoTf rId tf) = "routerTf " ++ show rId ++ ":\n" ++ show tf
 
 -- a session function is a pair of session and a,
 -- where a is an instance of SessionTf
@@ -96,8 +100,8 @@ class ProtoAttr a where
   toTfExpr :: a -> TfExpr
 
 class Route a where
-  -- return the better route if two routes are comparable
-  mergeRoute :: a -> a -> Maybe a
+  -- return the condition when the first route is preferred than the second route
+  preferFstCond :: Maybe a -> Maybe a -> TfCondition
   -- convert a route to a tf assign
   toTfAssign :: a -> TfAssign
   -- update first route's attributes with second route's attributes
@@ -158,72 +162,64 @@ class ProtocolTf a where
           newPc = ProtoTfClause newCond' (Just newRte)
 
 -- given a pair of protoTfs, product each protoTfClause pair
-prod2PTfs :: ProtoTf a -> ProtoTf a -> [(ProtoTfClause a, ProtoTfClause a)]
+prod2PTfs ::
+     Route a => ProtoTf a -> ProtoTf a -> [(ProtoTfClause a, ProtoTfClause a)]
 prod2PTfs pTf1 pTf2 = [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
--- -- given a list of link tfs which has the same source router,
--- -- TODO: takes as argument all nodes' link tfs
--- -- convert them to a router tf
--- -- the link tfs cannot be empty
--- toRouterProtoTf :: [LinkProtoTf] -> RouterProtoTf
--- toRouterProtoTf lTfs@(LinkProtoTf (Link src dst) p lTf:_) =
---   RouterProtoTf src p routerTf
+
+-- given a list of link tfs which has the same source router,
+-- convert them to a router tf
+toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf a
+-- the list cannot be empty, if it is, return a dummy router tf
+toRouterProtoTf [] = RouterProtoTf 0 (ProtoTf [])
+toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) = RouterProtoTf src routerTf
+  where
+    routerTf = computeRouterTf (ProtoTf []) lTfs
+    -- given the current Tf, and a list of link tfs,
+    -- combing the head linkTf and each of the rest linkTfs and compute the new pTf clauses
+    computeRouterTf :: Route a => ProtoTf a -> [LinkProtoTf a] -> ProtoTf a
+    computeRouterTf accPTf [] = accPTf
+    computeRouterTf accPTf (LinkProtoTf (Link _ cDst) curPTf:restLTfs) =
+      computeRouterTf accPTf' restLTfs
+        -- pass curPTf to make it clear that curPTf and restPTf are the same type
+      where
+        accPTf' = foldr (concatPTfs curPTf) accPTf restLTfs
+        concatPTfs ::
+             Route a => ProtoTf a -> LinkProtoTf a -> ProtoTf a -> ProtoTf a
+        -- combine curTf and each of restTfs, and update the accTf
+        concatPTfs curPTf' (LinkProtoTf (Link _ rDst) restPTf) accPTf2 =
+          ProtoTf (pTfClauses accPTf2 ++ newPTfClauses)
+          where
+            newPTfClauses =
+              foldr
+                (mergeLTfClauses (cDst, rDst))
+                []
+                (prod2PTfs curPTf' restPTf)
+
+-- given a pair of pTf clauses ca and cb, and their associated dst routers,
+-- compute the conditions when ra is better than rb
+-- if the condition is not false, and the condition and the conditions of ca and cb to c'
+-- and construct the new clause
+mergeLTfClauses ::
+     (Route a)
+  => (RouterId, RouterId)
+  -> (ProtoTfClause a, ProtoTfClause a)
+  -> [ProtoTfClause a]
+  -> [ProtoTfClause a]
+mergeLTfClauses = undefined
+-- mergeLTfClauses (r1, r2) (c1@(ProtoTfClause cond1 rte1), c2@(ProtoTfClause cond2 rte2)) accC =
+--   accC'
 --   where
---     -- the router tf is computed by checking every pair of link tfs a, b
---     -- for each clause pair of a and b (ca, cb), compte the condition when one assign is better than the other
---     -- if the condition is not false, and the condition and the conditions of ca and cb to c'
---     -- the new assign is the better assign in ca and cb, and the assign should cover all setable route attributes
---     -- so ca, cb pair leads to at most 2 new clauses in the router tf
---     -- in each new clause, the variable is updated to include the router index
---     routerTf = computeRouterTf (Tf []) lTfs
---     -- given the current Tf, and a list of link tfs,
---     -- combing the head linkTf and each of the rest linkTfs and compute the new tf clauses
---     computeRouterTf :: Tf -> [LinkProtoTf] -> Tf
---     computeRouterTf accTf [] = accTf
---     computeRouterTf accTf (curLTf@(LinkProtoTf (Link _ cDst) _ curTf):restLTfs) =
---       computeRouterTf accTf' restLTfs
---       where
---         accTf' = foldr concatTfs accTf restLTfs
---         concatTfs :: LinkProtoTf -> Tf -> Tf
---         -- combine curTf and each of restTfs, and update the accTf
---         concatTfs restLTf@(LinkProtoTf (Link _ rDst) _ restTf) accTf =
---           Tf (tfClauses accTf ++ newTfClauses)
---           where
---             newTfClauses =
---               foldr (mergeLTfClauses p (cDst, rDst)) [] (prod2Tfs curTf restTf)
--- -- reverse the session direction
--- reverseDir :: SessionDir -> SessionDir
--- reverseDir dir =
---   case dir of
---     Import -> Export
---     Export -> Import
--- -- reverse the session
--- reverseSs :: Session -> Session
--- reverseSs (Session src dir dst) = Session dst (reverseDir dir) src
--- toSession :: RouterId -> SessionDir -> RouterId -> Session
--- toSession = Session
--- -- given a pair of tf clauses ca and cb, and their associated dst routers (second argument),
--- -- first convert each clause assign to protocol route ra and rb
--- -- then compute the conditions when ra is better than rb
--- -- if the condition is not false, and the condition and the conditions of ca and cb to c'
--- -- convert back the better route to assign, and construct the new clause
--- mergeLTfClauses ::
---     Protocol
---   -> (RouterId, RouterId)
---   -> (TfClause, TfClause)
---   -> [TfClause]
---   -> [TfClause]
--- mergeLTfClauses p (r1, r2) (c1, c2) accC = accC'
---   where
---     -- append _r1 and _r2 to all variable names in c1 and c2
---     c1'@(TfClause cond1' assign1') = appendClauseVar (show r1) c1
---     c2'@(TfClause cond2' assign2') = appendClauseVar (show r2) c2
---     prefer1Cond = preferFstCond p assign1' assign2'
---     prefer2Cond = preferFstCond p assign2' assign1'
---     curCond = TfAnd cond1' cond2'
---     -- TODO: if prefer1Cond is false, it is discarded
---     newC =
---       [ TfClause (TfAnd curCond prefer1Cond) assign1'
---       , TfClause (TfAnd curCond prefer2Cond) assign2'
---       ]
---     accC' = accC ++ newC
---     -- prefer1Cond = prefer
+--     accC' = undefined
+    -- compute the conditions when rte1 is better than rte2, and vice versa
+    -- c1'@(TfClause cond1' assign1') = appendClauseVar (show r1) c1
+    -- c2'@(TfClause cond2' assign2') = appendClauseVar (show r2) c2
+    -- prefer1Cond = preferFstCond p assign1' assign2'
+    -- prefer2Cond = preferFstCond p assign2' assign1'
+    -- curCond = TfAnd cond1' cond2'
+    -- -- TODO: if prefer1Cond is false, it is discarded
+    -- newC =
+    --   [ TfClause (TfAnd curCond prefer1Cond) assign1'
+    --   , TfClause (TfAnd curCond prefer2Cond) assign2'
+    --   ]
+    -- accC' = accC ++ newC
+    -- prefer1Cond = prefer

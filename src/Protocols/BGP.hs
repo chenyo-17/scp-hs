@@ -81,11 +81,7 @@ newtype BgpRm =
   BgpRm [RmItem]
   deriving (Eq)
 
-instance ProtoAttr BgpAttr where
-  toTfExpr = bgpAttrToExpr
-
 -- convert a BgpAttr to a TfExpr
--- TODO: this should be an instance of ProtoAttr
 bgpAttrToExpr :: BgpAttr -> TfExpr
 bgpAttrToExpr attr =
   case attr of
@@ -102,24 +98,6 @@ toRmItem = RmItem
 -- user constructor API for BgpRm
 toBgpRm :: [RmItem] -> BgpRm
 toBgpRm = BgpRm
-
--- merge 2 BGP routes if they have the same IP prefix
--- the merged route is one of the 2 routes with the highest localPref
--- or the one with the shortest, or the one with a lower nextHop
-mergeBgpRoute :: BgpRoute -> BgpRoute -> Maybe BgpRoute
-mergeBgpRoute r1 r2
-  | bgpIpPrefix r1 == bgpIpPrefix r2 = Just $ merge r1 r2
-  | otherwise = Nothing
-  where
-    merge :: BgpRoute -> BgpRoute -> BgpRoute
-    merge ra rb
-      | localPref ra > localPref rb = ra
-      | localPref ra < localPref rb = rb
-      -- | length (asPath ra) < length (asPath rb) = ra
-      -- | length (asPath ra) > length (asPath rb) = rb
-      | bgpNextHop ra < bgpNextHop rb = ra
-      | bgpNextHop ra > bgpNextHop rb = rb
-      | otherwise = ra
 
 -- convert a BgpRm to a ProtoTf
 bgpRmToProtoTf :: BgpRm -> ProtoTf BgpRoute
@@ -163,7 +141,9 @@ bgpItemToClause (RmItem action matches sets) =
         SetCommunity c   -> r {community = Just c}
         SetBgpFrom f     -> r {bgpFrom = Just f}
 
--- -- convert a BgpRoute to a TfAssign
+-- convert a BgpRoute to a TfAssign
+-- all attributes must be covered,
+-- if some attributes are not set, set it to the attribute var
 bgpRouteToAssign :: BgpRoute -> TfAssign
 bgpRouteToAssign rte =
   (fromBgpFrom
@@ -176,13 +156,13 @@ bgpRouteToAssign rte =
     -- TODO: this is ugly
     fromIpPrefix :: TfAssign -> TfAssign
     -- assume ip prefix is never reset
-    fromIpPrefix = addTfAssignItem ipPrefixVar (keepOldVar ipPrefixVar)
+    fromIpPrefix = addTfAssignItem ipPrefixVar ipPrefixVar
       where
         ipPrefixVar = bgpAttrToExpr BgpIpPrefix
     fromBgpCommunity :: TfAssign -> TfAssign
     fromBgpCommunity ass =
       case community rte of
-        Nothing   -> addTfAssignItem communityVar (keepOldVar communityVar) ass
+        Nothing   -> addTfAssignItem communityVar communityVar ass
           -- keep old value
         Just comm -> addTfAssignItem communityVar (TfConst (TfInt comm)) ass
       where
@@ -190,21 +170,21 @@ bgpRouteToAssign rte =
     fromBgpNextHop :: TfAssign -> TfAssign
     fromBgpNextHop ass =
       case bgpNextHop rte of
-        Nothing -> addTfAssignItem nextHopVar (keepOldVar nextHopVar) ass
+        Nothing -> addTfAssignItem nextHopVar nextHopVar ass
         Just nh -> addTfAssignItem nextHopVar (TfConst (TfInt (fromIpw nh))) ass
       where
         nextHopVar = bgpAttrToExpr BgpNextHop
     fromLocalPref :: TfAssign -> TfAssign
     fromLocalPref ass =
       case localPref rte of
-        Nothing -> addTfAssignItem localPrefVar (keepOldVar localPrefVar) ass
+        Nothing -> addTfAssignItem localPrefVar localPrefVar ass
         Just lp -> addTfAssignItem localPrefVar (TfConst (TfInt lp)) ass
       where
         localPrefVar = bgpAttrToExpr LocalPref
     fromBgpFrom :: TfAssign -> TfAssign
     fromBgpFrom ass =
       case bgpFrom rte of
-        Nothing -> addTfAssignItem bgpFromVar (keepOldVar bgpFromVar) ass
+        Nothing -> addTfAssignItem bgpFromVar bgpFromVar ass
         Just fr -> addTfAssignItem bgpFromVar (TfConst (TfInt fr)) ass
       where
         bgpFromVar = bgpAttrToExpr BgpFrom
@@ -259,6 +239,9 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         Permit -> RmItem action matches (SetBgpFrom from : sets)
         Deny   -> RmItem action matches sets
 
+instance ProtoAttr BgpAttr where
+  toTfExpr = bgpAttrToExpr
+
 instance ProtocolTf BgpRm where
   type RouteType BgpRm = BgpRoute
   toSsProtoTf (ss@(Session _ sDir sDst), rm) = sTf
@@ -272,7 +255,7 @@ instance ProtocolTf BgpRm where
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
 instance Route BgpRoute where
-  mergeRoute = mergeBgpRoute
+  preferFstCond = undefined
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
 
