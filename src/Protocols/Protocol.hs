@@ -5,6 +5,7 @@
 module Protocols.Protocol where
 
 import           Data.Kind          (Type)
+import           Data.Maybe         (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
 
@@ -70,17 +71,18 @@ data SessionProtoTf a = SessionProtoTf
 instance (Show a) => Show (SessionProtoTf a) where
   show (SessionProtoTf ss tf) = "sessionTf " ++ show ss ++ ":\n" ++ show tf
 
--- data LinkProtoTf = LinkProtoTf
---   { link   :: Link
---   , lTf    :: ProtoTf
---   } deriving (Eq)
+data LinkProtoTf a = LinkProtoTf
+  { link :: Link
+  , lTf  :: ProtoTf a
+  } deriving (Eq)
+
 -- data RouterProtoTf = RouterProtoTf
 --   { router :: RouterId
 --   , nTf    :: Tf
 --   } deriving (Eq)
--- instance Show LinkProtoTf where
---   show (LinkProtoTf lk proto tf) =
---     "linkTf " ++ show lk ++ " " ++ show proto ++ ":\n" ++ show tf
+instance (Show a) => Show (LinkProtoTf a) where
+  show (LinkProtoTf lk tf) = "linkTf " ++ show lk ++ ":\n" ++ show tf
+
 -- a session function is a pair of session and a,
 -- where a is an instance of SessionTf
 type SessionF a = (Session, a)
@@ -89,11 +91,17 @@ type SessionF a = (Session, a)
 -- the second is import tf
 type SessionFPair a = (SessionF a, SessionF a)
 
+class ProtoAttr a where
+  -- convert each attribute to a tf expression
+  toTfExpr :: a -> TfExpr
+
 class Route a where
   -- return the better route if two routes are comparable
   mergeRoute :: a -> a -> Maybe a
   -- convert a route to a tf assign
   toTfAssign :: a -> TfAssign
+  -- update first route's attributes with second route's attributes
+  updateRoute :: a -> a -> a
 
 class ProtocolTf a where
   -- declare the relationship between a protocol and its route type
@@ -102,37 +110,55 @@ class ProtocolTf a where
   toSsProtoTf ::
        (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
   -- first apply toSsProtoTf, then simplify the conditions
+  -- also remove false condition
   toSimpleSsProtoTf ::
        (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
   toSimpleSsProtoTf sF = sPTf {ssTf = simplePTf}
     where
       sPTf = toSsProtoTf sF
-      simplePTf = ProtoTf (map simpleCond ((pTfClauses . ssTf) sPTf))
+      simplePTf = ProtoTf (mapMaybe simpleCond ((pTfClauses . ssTf) sPTf))
       simpleCond (ProtoTfClause cond route) =
-        ProtoTfClause (simplifyCond cond) route
---   -- given a pair of session functions, convert to a link tf
---   -- TODO: finding the right pair of session tfs
---   -- is the responsibility of the config parser
---   -- the goal is to compute each router's node tf concurrently with lazy evaluation
---   -- e.g., a link tf is only computed when the network tf requires
---   toLinkProtoTf :: SessionFPair a -> LinkProtoTf
---   toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l p linkTf
---     where
---       sTfe = toSsProtoTf sfe
---       sTfi = toSsProtoTf sfi
---       l = Link (ssSrc ssi) (ssDst ssi)
---       p = ssProto sTfe
---       linkTf = foldr concatClauses (Tf []) (prod2Tfs (ssTf sTfe) (ssTf sTfi))
---         where
---           concatClauses :: (TfClause, TfClause) -> Tf -> Tf
---           -- if 2 clauses can concat, add it to the new tf
---           -- otherwise, do nothing
---           concatClauses (c1, c2) tf =
---             case c' of
---               Just c  -> Tf (c : tfClauses tf)
---               Nothing -> tf
---             where
---               c' = concatTfClauses (c1, c2)
+        case cond' of
+          TfFalse -> Nothing
+          _       -> Just (ProtoTfClause cond' route)
+        where
+          cond' = simplifyCond cond
+  -- given a pair of session functions, convert to a link tf
+  -- TODO: finding the right pair of session tfs
+  -- is the responsibility of the config parser
+  -- the goal is to compute each router's node tf concurrently with lazy evaluation
+  -- e.g., a link tf is only computed when the network tf requires
+  toLinkProtoTf ::
+       (Route (RouteType a)) => SessionFPair a -> LinkProtoTf (RouteType a)
+  toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l pLTf
+    where
+      sTfe = toSimpleSsProtoTf sfe
+      sTfi = toSimpleSsProtoTf sfi
+      l = Link (ssSrc ssi) (ssDst ssi)
+      pLTf =
+        foldr concatPTfClauses (ProtoTf []) (prod2PTfs (ssTf sTfe) (ssTf sTfi))
+      concatPTfClauses ::
+           (Route a)
+        => (ProtoTfClause a, ProtoTfClause a)
+        -> ProtoTf a
+        -> ProtoTf a
+      -- if 2 clauses can concat, add it to the new tf
+      -- otherwise, do nothing
+      -- if one route is null route, does not consider it
+      concatPTfClauses (ProtoTfClause _ Nothing, _) pTf = pTf
+      concatPTfClauses (_, ProtoTfClause _ Nothing) pTf = pTf
+      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause _ (Just rte2)) pTf@(ProtoTf pcs) =
+        case newCond of
+          TfFalse -> pTf
+          _       -> ProtoTf (newPc : pcs)
+        where
+          newCond = substCond cond1 (toTfAssign rte2)
+          newRte = updateRoute rte1 rte2
+          newPc = ProtoTfClause newCond (Just newRte)
+
+-- given a pair of protoTfs, product each protoTfClause pair
+prod2PTfs :: ProtoTf a -> ProtoTf a -> [(ProtoTfClause a, ProtoTfClause a)]
+prod2PTfs pTf1 pTf2 = [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
 -- -- given a list of link tfs which has the same source router,
 -- -- TODO: takes as argument all nodes' link tfs
 -- -- convert them to a router tf
@@ -180,7 +206,7 @@ class ProtocolTf a where
 -- -- if the condition is not false, and the condition and the conditions of ca and cb to c'
 -- -- convert back the better route to assign, and construct the new clause
 -- mergeLTfClauses ::
---      Protocol
+--     Protocol
 --   -> (RouterId, RouterId)
 --   -> (TfClause, TfClause)
 --   -> [TfClause]

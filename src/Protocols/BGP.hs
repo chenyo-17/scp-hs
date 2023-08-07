@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+
 module Protocols.BGP where
 
 import           Data.Word
@@ -15,12 +16,12 @@ data BgpRoute = BgpRoute
   -- additional attributes for tf, guaranteed to be set
   -- they are used to include protocol internal logic,
   -- e.g., no send back
-  , bgpFrom     :: RouterId
+  , bgpFrom     :: Maybe RouterId
   } deriving (Eq)
 
 -- routerId 0 is reserved for default route
 defaultBgpRoute :: BgpRoute
-defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing 0
+defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing Nothing
 
 data BgpAttr
   = LocalPref
@@ -79,7 +80,11 @@ newtype BgpRm =
   BgpRm [RmItem]
   deriving (Eq)
 
+instance ProtoAttr BgpAttr where
+  toTfExpr = bgpAttrToExpr
+
 -- convert a BgpAttr to a TfExpr
+-- TODO: this should be an instance of ProtoAttr
 bgpAttrToExpr :: BgpAttr -> TfExpr
 bgpAttrToExpr attr =
   case attr of
@@ -122,6 +127,8 @@ bgpRmToProtoTf = rmToTf TfTrue
   where
     rmToTf :: TfCondition -> BgpRm -> ProtoTf BgpRoute
     rmToTf _ (BgpRm []) = ProtoTf []
+    -- if the condition becomes false, ignore the rest of the items
+    rmToTf TfFalse _ = ProtoTf []
     rmToTf conds (BgpRm (i@(RmItem act _ _):is)) =
       case act of
       -- if it is deny, the condition is recorded,
@@ -154,7 +161,7 @@ bgpItemToClause (RmItem action matches sets) =
         SetLocalPref lp  -> r {localPref = Just lp}
         SetBgpNextHop nh -> r {bgpNextHop = Just nh}
         SetCommunity c   -> r {community = Just c}
-        SetBgpFrom f     -> r {bgpFrom = f}
+        SetBgpFrom f     -> r {bgpFrom = Just f}
 
 -- -- convert a BgpRoute to a TfAssign
 bgpRouteToAssign :: BgpRoute -> TfAssign
@@ -195,11 +202,29 @@ bgpRouteToAssign rte =
       where
         localPrefVar = bgpAttrToExpr LocalPref
     fromBgpFrom :: TfAssign -> TfAssign
-    -- bgp from must be already set
-    fromBgpFrom = addTfAssignItem bgpFromVar (TfConst (TfInt fr))
+    fromBgpFrom ass =
+      case bgpFrom rte of
+        Nothing -> addTfAssignItem bgpFromVar (keepOldVar bgpFromVar) ass
+        Just fr -> addTfAssignItem bgpFromVar (TfConst (TfInt fr)) ass
       where
         bgpFromVar = bgpAttrToExpr BgpFrom
-        fr = bgpFrom rte
+
+-- update first route's attributes with the second route
+-- if they update the same attribute
+updateBgpRoute :: BgpRoute -> BgpRoute -> BgpRoute
+updateBgpRoute rte1 rte2 =
+  BgpRoute
+    -- if the second route is not Nothing, return it, otherwise, return the first
+    { localPref = updateMaybe (localPref rte1) (localPref rte2)
+    , bgpNextHop = updateMaybe (bgpNextHop rte1) (bgpNextHop rte2)
+    , community = updateMaybe (community rte1) (community rte2)
+    , bgpIpPrefix = updateMaybe (bgpIpPrefix rte1) (bgpIpPrefix rte2)
+    , bgpFrom = updateMaybe (bgpFrom rte1) (bgpFrom rte2)
+    }
+  where
+    updateMaybe :: Maybe a -> Maybe a -> Maybe a
+    updateMaybe _ (Just val2) = Just val2
+    updateMaybe val1 Nothing  = val1
 
 -- convert a BgpMatch to a TfCondition
 bgpMatchToCond :: BgpMatch -> TfCondition
@@ -249,6 +274,7 @@ instance ProtocolTf BgpRm where
 instance Route BgpRoute where
   mergeRoute = mergeBgpRoute
   toTfAssign = bgpRouteToAssign
+  updateRoute = updateBgpRoute
 
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl
@@ -268,14 +294,13 @@ instance Show BgpRm where
   show (BgpRm rmItems) = unlines $ map show rmItems
 
 instance Show BgpRoute where
-  show r =
-    "ip-prefix: "
-      ++ show (bgpIpPrefix r)
-      ++ ", next-hop: "
-      ++ show (bgpNextHop r)
-      ++ ", community: "
-      ++ show (community r)
-      ++ ", local-pref: "
-      ++ show (localPref r)
-      ++ ", from: "
-      ++ show (bgpFrom r)
+  -- only show the attributes that are not Nothing
+  show r =  showJust (show BgpIpPrefix) (bgpIpPrefix r)
+         ++ showJust (show BgpNextHop) (bgpNextHop r)
+         ++ showJust (show BgpCommunity) (community r)
+         ++ showJust (show LocalPref) (localPref r)
+         ++ showJust (show BgpFrom) (bgpFrom r)
+    where
+      showJust :: Show a => String -> Maybe a -> String
+      showJust _ Nothing  = ""
+      showJust s (Just v) = s ++ " := " ++ show v ++ ", "
