@@ -147,14 +147,15 @@ class ProtocolTf a where
       -- if one route is null route, does not consider it
       concatPTfClauses (ProtoTfClause _ Nothing, _) pTf = pTf
       concatPTfClauses (_, ProtoTfClause _ Nothing) pTf = pTf
-      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause _ (Just rte2)) pTf@(ProtoTf pcs) =
-        case newCond of
+      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 (Just rte2)) pTf@(ProtoTf pcs) =
+        case newCond' of
           TfFalse -> pTf
           _       -> ProtoTf (newPc : pcs)
         where
-          newCond = substCond cond1 (toTfAssign rte2)
+          newCond = substCond cond2 (toTfAssign rte1)
+          newCond' = simplifyCond (TfAnd cond1 newCond)
           newRte = updateRoute rte1 rte2
-          newPc = ProtoTfClause newCond (Just newRte)
+          newPc = ProtoTfClause newCond' (Just newRte)
 
 -- given a pair of protoTfs, product each protoTfClause pair
 prod2PTfs :: ProtoTf a -> ProtoTf a -> [(ProtoTfClause a, ProtoTfClause a)]

@@ -2,6 +2,8 @@
 
 module Protocols.BGP where
 
+import           Data.List          (intercalate)
+import           Data.Maybe
 import           Data.Word
 import           Functions.Transfer
 import           Protocols.Protocol
@@ -11,7 +13,7 @@ data BgpRoute = BgpRoute
   { localPref   :: Maybe Word32
   , bgpNextHop  :: Maybe Ip
   -- only consider a single community
-  , community   :: Maybe Community
+  , community   :: Maybe BgpCommunity
   , bgpIpPrefix :: Maybe IpPrefix
   -- additional attributes for tf, guaranteed to be set
   -- they are used to include protocol internal logic,
@@ -26,13 +28,12 @@ defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing Nothing
 data BgpAttr
   = LocalPref
   | BgpNextHop
-  | AsPath
-  | BgpCommunity
+  | Community
   | BgpIpPrefix
   | BgpFrom
   deriving (Show, Eq)
 
-type Community = Word32
+type BgpCommunity = Word32
 
 -- action for both list and rmItem
 data Action
@@ -46,7 +47,7 @@ type BgpAttrListItem a = a
 
 type BgpPlItem = BgpAttrListItem IpPrefix
 
-type BgpClItem = BgpAttrListItem Community
+type BgpClItem = BgpAttrListItem BgpCommunity
 
 type BgpAttrList a = [BgpAttrListItem a]
 
@@ -63,7 +64,7 @@ data BgpMatch
 data BgpSet
   = SetLocalPref Word32
   | SetBgpNextHop Ip
-  | SetCommunity Community -- only consider a single community
+  | SetCommunity BgpCommunity -- only consider a single community
   | SetBgpFrom RouterId
   deriving (Eq)
 
@@ -88,12 +89,11 @@ instance ProtoAttr BgpAttr where
 bgpAttrToExpr :: BgpAttr -> TfExpr
 bgpAttrToExpr attr =
   case attr of
-    LocalPref    -> TfVar "LocalPref"
-    BgpNextHop   -> TfVar "BgpNextHop"
-    AsPath       -> TfVar "AsPath"
-    BgpCommunity -> TfVar "Community"
-    BgpIpPrefix  -> TfVar "BgpIpPrefix"
-    BgpFrom      -> TfVar "BgpFrom"
+    LocalPref   -> TfVar "LocalPref"
+    BgpNextHop  -> TfVar "BgpNextHop"
+    Community   -> TfVar "Community"
+    BgpIpPrefix -> TfVar "BgpIpPrefix"
+    BgpFrom     -> TfVar "BgpFrom"
 
 -- user constructor API for RmItem
 toRmItem :: Action -> [BgpMatch] -> [BgpSet] -> RmItem
@@ -186,7 +186,7 @@ bgpRouteToAssign rte =
           -- keep old value
         Just comm -> addTfAssignItem communityVar (TfConst (TfInt comm)) ass
       where
-        communityVar = bgpAttrToExpr BgpCommunity
+        communityVar = bgpAttrToExpr Community
     fromBgpNextHop :: TfAssign -> TfAssign
     fromBgpNextHop ass =
       case bgpNextHop rte of
@@ -246,7 +246,7 @@ plItemToCond pli = TfAnd geIpLow leIpHiw
 -- convert a BgpClItem to a TfCondition
 -- each item only contains a single community
 clItemToCond :: BgpClItem -> TfCondition
-clItemToCond ci = TfCond (bgpAttrToExpr BgpCommunity) TfEq (TfConst (TfInt ci))
+clItemToCond ci = TfCond (bgpAttrToExpr Community) TfEq (TfConst (TfInt ci))
 
 -- add a setBgpFrom in each item of a rm if it is an import session
 setBgpFrom :: RouterId -> BgpRm -> BgpRm
@@ -293,14 +293,17 @@ instance Show RmItem where
 instance Show BgpRm where
   show (BgpRm rmItems) = unlines $ map show rmItems
 
-instance Show BgpRoute where
+instance Show BgpRoute
   -- only show the attributes that are not Nothing
-  show r =  showJust (show BgpIpPrefix) (bgpIpPrefix r)
-         ++ showJust (show BgpNextHop) (bgpNextHop r)
-         ++ showJust (show BgpCommunity) (community r)
-         ++ showJust (show LocalPref) (localPref r)
-         ++ showJust (show BgpFrom) (bgpFrom r)
+                                                   where
+  show r =
+    (intercalate ", " . catMaybes)
+      [ showJust (show BgpIpPrefix) (bgpIpPrefix r)
+      , showJust (show BgpNextHop) (bgpNextHop r)
+      , showJust (show Community) (community r)
+      , showJust (show LocalPref) (localPref r)
+      ]
     where
-      showJust :: Show a => String -> Maybe a -> String
-      showJust _ Nothing  = ""
-      showJust s (Just v) = s ++ " := " ++ show v ++ ", "
+      showJust :: Show a => String -> Maybe a -> Maybe String
+      showJust _ Nothing  = Nothing
+      showJust s (Just v) = Just $ s ++ " := " ++ show v
