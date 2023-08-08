@@ -1,13 +1,12 @@
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Protocols.BGP where
 
-import           Data.List          (intercalate)
+import           Data.List               (intercalate)
 import           Data.Maybe
 import           Data.Word
 import           Functions.Transfer
-import           Protocols.Protocol
+import           Protocols.Base.Protocol
 import           Utilities.Ip
 
 data BgpRoute = BgpRoute
@@ -246,9 +245,9 @@ preferFstBgpCond :: Maybe BgpRoute -> TfAssign -> TfAssign -> TfCondition
 preferFstBgpCond _ TfAssignNull _ = TfFalse
 -- if the second assign is null route, the first not null assign is always preferred
 preferFstBgpCond _ _ TfAssignNull = TfTrue
-preferFstBgpCond _ ass1 ass2 =
+preferFstBgpCond _ ass1 ass2
   -- prefer lower lp, and then larger from (to prefer external route later)
-  TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
+ = TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2

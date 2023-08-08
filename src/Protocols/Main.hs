@@ -1,8 +1,11 @@
-module Main (main) where
+module Main
+  ( main
+  ) where
 
 import           Functions.Transfer
 import           Protocols.BGP
-import           Protocols.Protocol
+import           Protocols.Base.Protocol
+import           Protocols.Base.Router
 import           Utilities.Ip
 
 main :: IO ()
@@ -57,7 +60,6 @@ main = do
   let sfPair12 = (sfExport2To1, sfImport1From2)
   let sfPair21 = (sfExport1To2, sfImport2From1)
   let sfPair13 = (sfExport3To1, sfImport1From3)
-
   let lPTf12 = toLinkProtoTf sfPair12
   let lPTf21 = toLinkProtoTf sfPair21
   let lPTf13 = toLinkProtoTf sfPair13

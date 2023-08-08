@@ -3,36 +3,29 @@
 {-# LANGUAGE TupleSections           #-}
 {-# LANGUAGE TypeFamilies            #-}
 
-module Protocols.Protocol where
+module Protocols.Base.Protocol where
 
 import           Data.Kind          (Type)
-import           Data.Maybe         (catMaybes, mapMaybe)
+import           Data.Maybe         (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
 
 type RouterId = Word32
-
-data SessionDir
-  = Import
-  | Export
-  deriving (Show, Eq)
 
 data ProtoTfClause a = ProtoTfClause
   { pCond  :: TfCondition
   , pRoute :: Maybe a -- Nothing means null route
   } deriving (Eq)
 
-instance (Show a) => Show (ProtoTfClause a) where
-  show (ProtoTfClause cond route) =
-    show cond ++ " -> " ++ maybe "null" show route
-
 -- a is an instance of Route
 newtype ProtoTf a = ProtoTf
   { pTfClauses :: [ProtoTfClause a]
   } deriving (Eq)
 
-instance (Show a) => Show (ProtoTf a) where
-  show (ProtoTf clauses) = unlines $ map show clauses
+data SessionDir
+  = Import
+  | Export
+  deriving (Show, Eq)
 
 -- a Import b means this is an import session at a to apply on b
 -- a Export b means this is an export session at a to apply on b
@@ -52,6 +45,19 @@ instance Show Session where
       Import -> show src ++ "<-" ++ show dst
       Export -> show src ++ "->" ++ show dst
 
+data SessionProtoTf a = SessionProtoTf
+  { session :: Session
+  , ssTf    :: ProtoTf a
+  } deriving (Eq)
+
+-- a session function is a pair of session and a,
+-- where a is an instance of SessionTf
+type SessionF a = (Session, a)
+
+-- pair of session functions, the first is export tf,
+-- the second is import tf
+type SessionFPair a = (SessionF a, SessionF a)
+
 -- (a, b) means this is a link for a to receive b's routes
 -- it is associated with a tf that chaining tf of session (b, export, a)
 -- and tf of session (a, import, b)
@@ -63,15 +69,6 @@ data Link = Link
 instance Show Link where
   show (Link src dst) = show src ++ "<-" ++ show dst
 
-data SessionProtoTf a = SessionProtoTf
-  { session :: Session
-  , ssTf    :: ProtoTf a
-  } deriving (Eq)
-
--- TODO: automatically compute indentation
-instance (Show a) => Show (SessionProtoTf a) where
-  show (SessionProtoTf ss tf) = "sessionTf " ++ show ss ++ ":\n" ++ show tf
-
 data LinkProtoTf a = LinkProtoTf
   { link :: Link
   , lTf  :: ProtoTf a
@@ -79,27 +76,6 @@ data LinkProtoTf a = LinkProtoTf
 
 instance (Show a) => Show (LinkProtoTf a) where
   show (LinkProtoTf lk tf) = "linkTf " ++ show lk ++ ":\n" ++ show tf
-
--- from router tf, the tf is no longer proto tf
-data RouterProtoTf = RouterProtoTf
-  { router :: RouterId
-  , rTf    :: Tf
-  } deriving (Eq)
-
-instance Show RouterProtoTf where
-  show (RouterProtoTf rId tf) = "routerTf " ++ show rId ++ ":\n" ++ show tf
-
--- a session function is a pair of session and a,
--- where a is an instance of SessionTf
-type SessionF a = (Session, a)
-
--- pair of session functions, the first is export tf,
--- the second is import tf
-type SessionFPair a = (SessionF a, SessionF a)
-
-class ProtoAttr a where
-  -- convert each attribute to a tf expression
-  toTfExpr :: a -> TfExpr
 
 class Route a where
   -- return the condition when the first route is preferred than the second route
@@ -109,6 +85,10 @@ class Route a where
   toTfAssign :: a -> TfAssign
   -- update first route's attributes with second route's attributes
   updateRoute :: a -> a -> a
+
+class ProtoAttr a where
+  -- convert each attribute to a tf expression
+  toTfExpr :: a -> TfExpr
 
 class ProtocolTf a where
   -- declare the relationship between a protocol and its route type
@@ -187,74 +167,13 @@ class ProtocolTf a where
               newPc = ProtoTfClause newCond' (newRte rte1 rte2)
               newRte r1 = fmap (updateRoute r1)
 
--- given a list of link tfs which has the same source router,
--- convert them to a router tf
-toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf
--- the list cannot be empty, if it is, return a dummy router tf
-toRouterProtoTf [] = RouterProtoTf 0 (Tf [])
-toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) = RouterProtoTf src routerTf
-  where
-    routerTf = computeRouterTf (Tf []) lTfs
-    -- given the current Tf, and a list of link tfs,
-    -- combing the head linkTf and each of the rest linkTfs and compute the new pTf clauses
-    computeRouterTf :: Route a => Tf -> [LinkProtoTf a] -> Tf
-    computeRouterTf accPTf [] = accPTf
-    computeRouterTf accPTf (LinkProtoTf (Link _ cDst) curPTf:restLTfs) =
-      computeRouterTf accPTf' restLTfs
-        -- pass curPTf to make it clear that curPTf and restPTf are the same type
-      where
-        accPTf' = foldr (concatPTfs curPTf) accPTf restLTfs
-        concatPTfs :: Route a => ProtoTf a -> LinkProtoTf a -> Tf -> Tf
-        -- combine curTf and each of restTfs, and update the accTf
-        concatPTfs curPTf' (LinkProtoTf (Link _ rDst) restPTf) accPTf2 =
-          Tf (tfClauses accPTf2 ++ newTfClauses)
-          where
-            newTfClauses =
-              foldr
-                (mergeLTfClauses (cDst, rDst))
-                []
-                (prod2LPTfs curPTf' restPTf)
-            -- given a pair of link protoTfs, product each protoTfClause pair
-            prod2LPTfs ::
-                 Route a
-              => ProtoTf a
-              -> ProtoTf a
-              -> [(ProtoTfClause a, ProtoTfClause a)]
-            prod2LPTfs pTf1 pTf2 =
-              [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
+instance (Show a) => Show (ProtoTfClause a) where
+  show (ProtoTfClause cond route) =
+    show cond ++ " -> " ++ maybe "null" show route
 
--- given a pair of pTf clauses ca and cb, and their associated dst routers,
--- compute the conditions when ra is better than rb
--- if the condition is not false, and the condition and the conditions of ca and cb to c'
--- and construct the new clause
--- for router tf, if the assign is null, can discard
--- from router tf, the tf becomes normal tf, not proto tf
-mergeLTfClauses ::
-     (Route a)
-  => (RouterId, RouterId)
-  -> (ProtoTfClause a, ProtoTfClause a)
-  -> [TfClause]
-  -> [TfClause]
-mergeLTfClauses (r1, r2) (ProtoTfClause cond1 rte1, ProtoTfClause cond2 rte2) accC =
-  accC'
-  where
-    -- compute the conditions when rte1 is better than rte2, and vice versa
-    ass1 :: TfAssign
-    ass2 :: TfAssign
-    ass1 = appendAssignVar (show r1) $ maybe TfAssignNull toTfAssign rte1
-    ass2 = appendAssignVar (show r2) $ maybe TfAssignNull toTfAssign rte2
-    newCond =
-      TfAnd (appendCondVar (show r1) cond1) (appendCondVar (show r2) cond2)
-    -- concat all conditions
-    accC' = accC ++ catMaybes [newC1, newC2]
-    newC1 = preferFstClause rte1 ass1 ass2
-    newC2 = preferFstClause rte2 ass2 ass1
-    preferFstClause ::
-         Route a => Maybe a -> TfAssign -> TfAssign -> Maybe TfClause
-    preferFstClause rte ass1' ass2' =
-      case newCond' of
-        TfFalse -> Nothing
-        _       -> Just $ TfClause newCond' ass1'
-        -- and all 3 conditions
-      where
-        newCond' = simplifyCond $ TfAnd newCond (preferFstCond rte ass1' ass2')
+instance (Show a) => Show (ProtoTf a) where
+  show (ProtoTf clauses) = unlines $ map show clauses
+
+-- TODO: automatically compute indentation
+instance (Show a) => Show (SessionProtoTf a) where
+  show (SessionProtoTf ss tf) = "sessionTf " ++ show ss ++ ":\n" ++ show tf

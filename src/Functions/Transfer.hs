@@ -72,20 +72,6 @@ newtype Tf = Tf
   { tfClauses :: [TfClause]
   } deriving (Eq)
 
-class Transfer a where
-  toTf :: a -> Tf
-  toSimpleTf :: a -> Tf
-  toSimpleTf = simplifyTf . toTf
-      -- simplify each Tf clause condition
-    where
-      simplifyTf :: Tf -> Tf
-      -- not use foldr as Tf is not a list type
-      simplifyTf (Tf []) = Tf []
-      -- this ugly cs is because Tf must be a newtype
-      simplifyTf (Tf (c:cs)) = Tf (c' : (tfClauses . simplifyTf . Tf) cs)
-        where
-          c' = TfClause (simplifyCond $ tfCond c) (tfAssign c)
-
 -- add a TfAssignItem to a TfAssign
 addTfAssignItem :: TfExpr -> TfExpr -> TfAssign -> TfAssign
 addTfAssignItem var value assign =
@@ -93,15 +79,10 @@ addTfAssignItem var value assign =
     TfAssign items -> TfAssign $ TfAssignItem var value : items
     TfAssignNull   -> TfAssignNull
 
--- default Tf does not change anything
-defaultTf :: Tf
-defaultTf = Tf [trueClause]
-  where
-    trueClause = TfClause TfTrue (TfAssign [])
-
 -- simplify one TfCondition
 -- TODO: cannot detect a == b && b == a are the same
 -- TODO: cannot detect a == c && a == b is false
+-- TODO: one way is to go through all Eq for a when adding a new Eq regarding a
 simplifyCond :: TfCondition -> TfCondition
 simplifyCond cond =
   case cond of
@@ -203,26 +184,6 @@ simplifyCond cond =
 prod2Tfs :: Tf -> Tf -> [(TfClause, TfClause)]
 prod2Tfs tf1 tf2 = [(c1, c2) | c1 <- tfClauses tf1, c2 <- tfClauses tf2]
 
--- concatenate two TfClauses to one TfClause
--- the check of the second clause cond is based on the first clause's assign
--- e.g.1, c1 = a > 10 -> a := 5
---        c2 =  a < 6 -> b := 3
---    returns c3 = a > 10 -> a := 5, b := 3
--- e.g.2, c1 = a > 10 -> b := 10
---        c2 = a < 6 -> a := 5
---    returns c3 = a > 10 -> b := 10, a := 5
--- the second assign overrides the first one if there assign the same variable
-concatTfClauses :: (TfClause, TfClause) -> Maybe TfClause
-concatTfClauses (TfClause c1 a1, TfClause c2 a2) =
-  if c' == TfFalse
-    then Nothing
-    else Just $ TfClause c' a'
-  where
-    -- combine two conditions
-    c' = simplifyCond $ TfAnd c1 (substCond c2 a1)
-    -- combine two assigns
-    a' = comb2Assigns a1 a2
-
 -- substitute the variable in the condition with the assign
 -- and simplify the condition
 -- TODO: support numeric conditions, e.g., a + 10 > 20 && a < 10
@@ -274,22 +235,6 @@ comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
       where
         as' = filter (\(TfAssignItem v' _) -> v /= v') as
 
--- return the variable that indicates the value of the variable remains the same
--- as the last occurrence
--- keepOldVar :: TfExpr -> TfExpr
--- keepOldVar expr =
---   case expr of
---     TfVar v -> TfVar $ v ++ "Old" -- assume no protocol will use this suffix in the variable name
---     _       -> expr
--- -- check if the expr is keepOldVar
--- isKeepOldVar :: TfExpr -> Bool
--- isKeepOldVar (TfVar v) = "Old" `isSuffixOf` v
--- isKeepOldVar _         = False
--- append a suffix to all TfVar in the clause
-appendClauseVar :: String -> TfClause -> TfClause
-appendClauseVar str (TfClause cond assign) =
-  TfClause (appendCondVar str cond) (appendAssignVar str assign)
-
 -- append a suffix to all TfVar in the condition
 appendCondVar :: String -> TfCondition -> TfCondition
 appendCondVar str cond =
@@ -301,9 +246,9 @@ appendCondVar str cond =
     _               -> cond
 
 -- append a suffix to all values in the assign
-appendAssignVar :: String -> TfAssign -> TfAssign
-appendAssignVar _ TfAssignNull = TfAssignNull
-appendAssignVar str (TfAssign as) =
+appendAssignVal :: String -> TfAssign -> TfAssign
+appendAssignVal _ TfAssignNull = TfAssignNull
+appendAssignVal str (TfAssign as) =
   TfAssign
     $ map (\(TfAssignItem v e) -> TfAssignItem v (appendExprVar str e)) as
 
