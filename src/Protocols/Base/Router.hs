@@ -80,7 +80,7 @@ mergeLTfClauses (r1, r2) (ProtoTfClause cond1 rte1, ProtoTfClause cond2 rte2) ac
     preferFstClause rte ass1' ass2' =
       case newCond' of
         TfFalse -> Nothing
-        _       -> Just $ TfClause newCond' ass1'
+        _       -> Just $ TfClause newCond' (appendAssignVar (show r1) ass1')
         -- and all 3 conditions
       where
         newCond' = simplifyCond $ TfAnd newCond (preferFstCond rte ass1' ass2')

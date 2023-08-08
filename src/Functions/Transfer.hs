@@ -180,10 +180,6 @@ simplifyCond cond =
             else TfFalse
     _ -> cond
 
--- produce the clause product of 2 tfs
-prod2Tfs :: Tf -> Tf -> [(TfClause, TfClause)]
-prod2Tfs tf1 tf2 = [(c1, c2) | c1 <- tfClauses tf1, c2 <- tfClauses tf2]
-
 -- substitute the variable in the condition with the assign
 -- and simplify the condition
 -- TODO: support numeric conditions, e.g., a + 10 > 20 && a < 10
@@ -209,16 +205,14 @@ substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
     -- the key in an tfAssign must be a var
     substEach _ cond' = cond'
 
--- combine two assigns, the second one overrides the first one
--- if there is null, the null is ignored
-comb2Assigns :: TfAssign -> TfAssign -> TfAssign
+-- combine two assigns, assume there is no duplicate keys
+concat2Assigns :: TfAssign -> TfAssign -> TfAssign
 -- if some assign is null, return the other one
--- in practice, the argument cannot be null, as it is already filtered
--- in toTf function
-comb2Assigns TfAssignNull a = a
-comb2Assigns a TfAssignNull = a
+-- this is required when concatenating a list of assigns with foldr
+concat2Assigns TfAssignNull a = a
+concat2Assigns a TfAssignNull = a
 -- the result cannot be null, as the null case has been handled
-comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
+concat2Assigns a1 a2 = TfAssign assignList
   where
     -- concat two assign lists into one,
     -- each element is an TfAssignItem
@@ -228,12 +222,6 @@ comb2Assigns a1 a2 = TfAssign $ foldr updateOrAppend [] assignList
           TfAssign l2 = a2
       -- reverse the order because of foldr starts from the end
        in l2 ++ l1
-    -- if the variable is already assigned in the list, delete it first
-    -- append the new assign to the list
-    updateOrAppend :: TfAssignItem -> [TfAssignItem] -> [TfAssignItem]
-    updateOrAppend (TfAssignItem v e) as = as' ++ [TfAssignItem v e]
-      where
-        as' = filter (\(TfAssignItem v' _) -> v /= v') as
 
 -- append a suffix to all TfVar in the condition
 appendCondVar :: String -> TfCondition -> TfCondition
@@ -251,6 +239,13 @@ appendAssignVal _ TfAssignNull = TfAssignNull
 appendAssignVal str (TfAssign as) =
   TfAssign
     $ map (\(TfAssignItem v e) -> TfAssignItem v (appendExprVar str e)) as
+
+-- append a suffix to all TfVar in the assign
+appendAssignVar :: String -> TfAssign -> TfAssign
+appendAssignVar _ TfAssignNull = TfAssignNull
+appendAssignVar str (TfAssign as) =
+  TfAssign
+    $ map (\(TfAssignItem v e) -> TfAssignItem (appendExprVar str v) e) as
 
 -- append a suffix to all TfVar in the expression
 appendExprVar :: String -> TfExpr -> TfExpr

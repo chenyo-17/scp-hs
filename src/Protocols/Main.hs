@@ -4,6 +4,7 @@ module Main
 
 import           Functions.Transfer
 import           Protocols.BGP
+import           Protocols.Base.Network
 import           Protocols.Base.Protocol
 import           Protocols.Base.Router
 import           Utilities.Ip
@@ -42,6 +43,12 @@ main = do
   -- TODO: any deny and permit needs to be declared explicitly
   let rmItem11 = toRmItem Permit [] []
   let rm1Import3 = toBgpRm [rmItem11]
+  -- (3, 2)
+  let rmItem12 = toRmItem Deny [MatchIpPrefix [ip4]] []
+  let rmItem13 = toRmItem Permit [MatchIpPrefix [ip5]] [SetLocalPref 50]
+  let rm3Export2 = toBgpRm [rmItem12, rmItem13]
+  let rmItem14 = toRmItem Permit [] []
+  let rm2Import3 = toBgpRm [rmItem14]
   -- print BGP rms
   putStrLn $ "BGPrm 1->2:\n" ++ show rm1Export2
   putStrLn $ "BGPrm 2<-1:\n" ++ show rm2Import1
@@ -49,20 +56,26 @@ main = do
   putStrLn $ "BGPrm 1<-2:\n" ++ show rm1Import2
   putStrLn $ "BGPrm 3->1:\n" ++ show rm3Export1
   putStrLn $ "BGPrm 1<-3:\n" ++ show rm1Import3
-  -- TODO: this is not a good API
+  putStrLn $ "BGPrm 3->2:\n" ++ show rm3Export2
+  putStrLn $ "BGPrm 2<-3:\n" ++ show rm2Import3
+  -- FIXME: this is not a good API!
   let sfExport1To2 = (toSession 1 Export 2, rm1Export2)
   let sfImport2From1 = (toSession 2 Import 1, rm2Import1)
   let sfExport2To1 = (toSession 2 Export 1, rm2Export1)
   let sfImport1From2 = (toSession 1 Import 2, rm1Import2)
   let sfExport3To1 = (toSession 3 Export 1, rm3Export1)
   let sfImport1From3 = (toSession 1 Import 3, rm1Import3)
+  let sfExport3To2 = (toSession 3 Export 2, rm3Export2)
+  let sfImport2From3 = (toSession 2 Import 3, rm2Import3)
   -- 12 means 1<-2
   let sfPair12 = (sfExport2To1, sfImport1From2)
   let sfPair21 = (sfExport1To2, sfImport2From1)
   let sfPair13 = (sfExport3To1, sfImport1From3)
+  let sfPair23 = (sfExport3To2, sfImport2From3)
   let lPTf12 = toLinkProtoTf sfPair12
   let lPTf21 = toLinkProtoTf sfPair21
   let lPTf13 = toLinkProtoTf sfPair13
+  let lPTf23 = toLinkProtoTf sfPair23
   -- -- print session tfs
   print (toSimpleSsProtoTf sfExport2To1)
   print (toSimpleSsProtoTf sfImport1From2)
@@ -70,10 +83,18 @@ main = do
   print (toSimpleSsProtoTf sfImport2From1)
   print (toSimpleSsProtoTf sfExport3To1)
   print (toSimpleSsProtoTf sfImport1From3)
+  print (toSimpleSsProtoTf sfExport3To2)
+  print (toSimpleSsProtoTf sfImport2From3)
   -- print link tfs
   print lPTf21
   print lPTf12
   print lPTf13
+  print lPTf23
   -- print router tfs
   let rTf1 = toRouterProtoTf [lPTf12, lPTf13]
+  let rTf2 = toRouterProtoTf [lPTf21, lPTf23]
   print rTf1
+  print rTf2
+  -- print network tfs
+  let nTf = toNetProtoTf [rTf1, rTf2]
+  print nTf
