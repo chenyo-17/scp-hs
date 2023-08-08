@@ -210,7 +210,7 @@ substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
     substEach _ cond' = cond'
 
 -- combine two assigns, the second one overrides the first one
--- if there is null, the null is propagated
+-- if there is null, the null is ignored
 comb2Assigns :: TfAssign -> TfAssign -> TfAssign
 -- if some assign is null, return the other one
 -- in practice, the argument cannot be null, as it is already filtered
