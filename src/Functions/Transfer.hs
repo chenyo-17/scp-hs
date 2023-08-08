@@ -55,6 +55,14 @@ data TfAssign
   | TfAssignNull -- null assignment
   deriving (Eq)
 
+-- lookup an assign value by a variable
+getAssignVal :: TfExpr -> TfAssign -> Maybe TfExpr
+getAssignVal var assign =
+  case assign of
+    TfAssign items ->
+      lookup var $ map (\item -> (assignVar item, assignValue item)) items
+    TfAssignNull -> Nothing
+
 data TfClause = TfClause
   { tfCond   :: TfCondition
   , tfAssign :: TfAssign

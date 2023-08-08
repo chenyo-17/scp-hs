@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Protocols.BGP where
@@ -66,6 +67,7 @@ data BgpSet
   | SetBgpNextHop Ip
   | SetCommunity BgpCommunity -- only consider a single community
   | SetBgpFrom RouterId
+  -- TODO: set ip prefix
   deriving (Eq)
 
 data RmItem = RmItem
@@ -107,31 +109,26 @@ bgpRmToProtoTf = rmToTf TfTrue
     rmToTf _ (BgpRm []) = ProtoTf []
     -- if the condition becomes false, ignore the rest of the items
     rmToTf TfFalse _ = ProtoTf []
-    rmToTf conds (BgpRm (i@(RmItem act _ _):is)) =
-      case act of
-      -- if it is deny, the condition is recorded,
-      -- but it is not added to the tf as its assign is null
-        Deny   -> rmToTf conds' (BgpRm is)
-        Permit -> ProtoTf $ clause : pTfClauses (rmToTf conds' (BgpRm is))
+    rmToTf conds (BgpRm (i:is)) =
+      ProtoTf (clause : pTfClauses (rmToTf conds' (BgpRm is)))
         -- for each match in item i, convert it to a TfCondition
         -- and fold them with TfAnd
         -- then negate the result and and it with old conds
         -- prepend conds to item conditions
       where
         ProtoTfClause c a = bgpItemToClause i
+        conds' = TfAnd conds (TfNot c)
         clause = ProtoTfClause (TfAnd conds c) a
-        negateCond = foldr (TfAnd . bgpMatchToCond) TfTrue (rmMatch i)
-        conds' = TfAnd conds (TfNot negateCond)
 
 -- convert a BgpItem to a TfClause
 bgpItemToClause :: RmItem -> ProtoTfClause BgpRoute
 bgpItemToClause (RmItem action matches sets) =
   case action of
-    Permit -> ProtoTfClause conds (Just assigns)
+    Permit -> ProtoTfClause conds (Just rte)
     Deny   -> ProtoTfClause conds Nothing
   where
     conds = foldr (TfAnd . bgpMatchToCond) TfTrue matches
-    assigns = foldr stepSet defaultBgpRoute sets
+    rte = foldr stepSet defaultBgpRoute sets
     -- accumulate all BgpSets into a single BgpRoute
     stepSet :: BgpSet -> BgpRoute -> BgpRoute
     stepSet s r =
@@ -239,6 +236,32 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         Permit -> RmItem action matches (SetBgpFrom from : sets)
         Deny   -> RmItem action matches sets
 
+-- return the conditions when the first route assign is preferred
+-- the passed assigns have been added with router ids
+-- the first argument is dummy, just to locate the instance
+-- TODO: the conversion from assign to attribute is not efficient
+preferFstBgpCond :: Maybe BgpRoute -> TfAssign -> TfAssign -> TfCondition
+-- if the first assign is null route, it can never be preferred
+preferFstBgpCond _ TfAssignNull _ = TfFalse
+-- if the second assign is null route, the first not null assign is always preferred
+preferFstBgpCond _ _ TfAssignNull = TfTrue
+preferFstBgpCond _ ass1 ass2 =
+  TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
+  where
+    sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
+    largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
+    sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
+    smallerFrom = TfCond (getFrom ass1) TfLt (getFrom ass2)
+    getIpPrefix :: TfAssign -> TfExpr
+    -- null case is already handled, here it must be just
+    getIpPrefix = fromJust . getAssignVal (bgpAttrToExpr BgpIpPrefix)
+    getLocalPref1 :: TfExpr
+    getLocalPref1 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass1
+    getLocalPref2 :: TfExpr
+    getLocalPref2 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass2
+    getFrom :: TfAssign -> TfExpr
+    getFrom = fromJust . getAssignVal (bgpAttrToExpr BgpFrom)
+
 instance ProtoAttr BgpAttr where
   toTfExpr = bgpAttrToExpr
 
@@ -247,6 +270,7 @@ instance ProtocolTf BgpRm where
   toSsProtoTf (ss@(Session _ sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
     -- TODO: also and additional match, e.g., matchSession
+    -- FIXME: this should not be implemented here
     where
       rm' =
         if sDir == Import
@@ -255,7 +279,7 @@ instance ProtocolTf BgpRm where
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
 instance Route BgpRoute where
-  preferFstCond = undefined
+  preferFstCond = preferFstBgpCond
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
 

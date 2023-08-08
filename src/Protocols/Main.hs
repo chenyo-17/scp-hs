@@ -33,7 +33,7 @@ main = do
   let rmItem4 = toRmItem Permit [] [SetBgpNextHop ip3]
   let rm1Import2 = toBgpRm [rmItem3, rmItem4]
   -- (3, 1)
-  let rmItem9 = toRmItem Permit [MatchIpPrefix [ip1]] [SetLocalPref 150]
+  let rmItem9 = toRmItem Deny [MatchIpPrefix [ip1]] []
   let rmItem10 = toRmItem Permit [MatchIpPrefix [ip2]] [SetLocalPref 250]
   let rm3Export1 = toBgpRm [rmItem9, rmItem10]
   -- TODO: any deny and permit needs to be declared explicitly
@@ -53,9 +53,14 @@ main = do
   let sfImport1From2 = (toSession 1 Import 2, rm1Import2)
   let sfExport3To1 = (toSession 3 Export 1, rm3Export1)
   let sfImport1From3 = (toSession 1 Import 3, rm1Import3)
+  -- 12 means 1<-2
   let sfPair12 = (sfExport2To1, sfImport1From2)
   let sfPair21 = (sfExport1To2, sfImport2From1)
-  let sfPair31 = (sfExport3To1, sfImport1From3)
+  let sfPair13 = (sfExport3To1, sfImport1From3)
+
+  let lPTf12 = toLinkProtoTf sfPair12
+  let lPTf21 = toLinkProtoTf sfPair21
+  let lPTf13 = toLinkProtoTf sfPair13
   -- -- print session tfs
   print (toSimpleSsProtoTf sfExport2To1)
   print (toSimpleSsProtoTf sfImport1From2)
@@ -64,6 +69,9 @@ main = do
   print (toSimpleSsProtoTf sfExport3To1)
   print (toSimpleSsProtoTf sfImport1From3)
   -- print link tfs
-  print (toLinkProtoTf sfPair12)
-  print (toLinkProtoTf sfPair21)
-  print (toLinkProtoTf sfPair31)
+  print lPTf21
+  print lPTf12
+  print lPTf13
+  -- print router tfs
+  let rTf1 = toRouterProtoTf [lPTf12, lPTf13]
+  print rTf1

@@ -5,7 +5,7 @@
 module Protocols.Protocol where
 
 import           Data.Kind          (Type)
-import           Data.Maybe         (mapMaybe)
+import           Data.Maybe         (catMaybes, mapMaybe)
 import           Data.Word
 import           Functions.Transfer
 
@@ -79,12 +79,13 @@ data LinkProtoTf a = LinkProtoTf
 instance (Show a) => Show (LinkProtoTf a) where
   show (LinkProtoTf lk tf) = "linkTf " ++ show lk ++ ":\n" ++ show tf
 
-data RouterProtoTf a = RouterProtoTf
+-- from router tf, the tf is no longer proto tf
+data RouterProtoTf = RouterProtoTf
   { router :: RouterId
-  , rTf    :: ProtoTf a
+  , rTf    :: Tf
   } deriving (Eq)
 
-instance (Show a) => Show (RouterProtoTf a) where
+instance Show RouterProtoTf where
   show (RouterProtoTf rId tf) = "routerTf " ++ show rId ++ ":\n" ++ show tf
 
 -- a session function is a pair of session and a,
@@ -101,7 +102,8 @@ class ProtoAttr a where
 
 class Route a where
   -- return the condition when the first route is preferred than the second route
-  preferFstCond :: Maybe a -> Maybe a -> TfCondition
+  -- the first argument is just use to locate the instance
+  preferFstCond :: Maybe a -> TfAssign -> TfAssign -> TfCondition
   -- convert a route to a tf assign
   toTfAssign :: a -> TfAssign
   -- update first route's attributes with second route's attributes
@@ -132,6 +134,7 @@ class ProtocolTf a where
   -- is the responsibility of the config parser
   -- the goal is to compute each router's node tf concurrently with lazy evaluation
   -- e.g., a link tf is only computed when the network tf requires
+  -- cannot remove null route, as it is still compared with other link tf!
   toLinkProtoTf ::
        (Route (RouteType a)) => SessionFPair a -> LinkProtoTf (RouteType a)
   toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l pLTf
@@ -148,18 +151,21 @@ class ProtocolTf a where
         -> ProtoTf a
       -- if 2 clauses can concat, add it to the new tf
       -- otherwise, do nothing
-      -- if one route is null route, does not consider it
-      concatPTfClauses (ProtoTfClause _ Nothing, _) pTf = pTf
-      concatPTfClauses (_, ProtoTfClause _ Nothing) pTf = pTf
-      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 (Just rte2)) pTf@(ProtoTf pcs) =
+      -- if the fist route is null route, no need to concat the second clause condition
+      concatPTfClauses (newC@(ProtoTfClause _ Nothing), _) (ProtoTf pcs) =
+        ProtoTf (newC : pcs)
+      -- if the second route is null route, still need to concat
+      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) pTf@(ProtoTf pcs) =
         case newCond' of
           TfFalse -> pTf
           _       -> ProtoTf (newPc : pcs)
         where
           newCond = substCond cond2 (toTfAssign rte1)
           newCond' = simplifyCond (TfAnd cond1 newCond)
-          newRte = updateRoute rte1 rte2
-          newPc = ProtoTfClause newCond' (Just newRte)
+          -- this is signature is here because otherwise the compiler cannot infer the type of rte1
+          newRte :: Route a => a -> Maybe a -> Maybe a
+          newPc = ProtoTfClause newCond' (newRte rte1 rte2)
+          newRte r1 = fmap (updateRoute r1)
 
 -- given a pair of protoTfs, product each protoTfClause pair
 prod2PTfs ::
@@ -168,28 +174,27 @@ prod2PTfs pTf1 pTf2 = [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
 
 -- given a list of link tfs which has the same source router,
 -- convert them to a router tf
-toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf a
+toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf
 -- the list cannot be empty, if it is, return a dummy router tf
-toRouterProtoTf [] = RouterProtoTf 0 (ProtoTf [])
+toRouterProtoTf [] = RouterProtoTf 0 (Tf [])
 toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) = RouterProtoTf src routerTf
   where
-    routerTf = computeRouterTf (ProtoTf []) lTfs
+    routerTf = computeRouterTf (Tf []) lTfs
     -- given the current Tf, and a list of link tfs,
     -- combing the head linkTf and each of the rest linkTfs and compute the new pTf clauses
-    computeRouterTf :: Route a => ProtoTf a -> [LinkProtoTf a] -> ProtoTf a
+    computeRouterTf :: Route a => Tf -> [LinkProtoTf a] -> Tf
     computeRouterTf accPTf [] = accPTf
     computeRouterTf accPTf (LinkProtoTf (Link _ cDst) curPTf:restLTfs) =
       computeRouterTf accPTf' restLTfs
         -- pass curPTf to make it clear that curPTf and restPTf are the same type
       where
         accPTf' = foldr (concatPTfs curPTf) accPTf restLTfs
-        concatPTfs ::
-             Route a => ProtoTf a -> LinkProtoTf a -> ProtoTf a -> ProtoTf a
+        concatPTfs :: Route a => ProtoTf a -> LinkProtoTf a -> Tf -> Tf
         -- combine curTf and each of restTfs, and update the accTf
         concatPTfs curPTf' (LinkProtoTf (Link _ rDst) restPTf) accPTf2 =
-          ProtoTf (pTfClauses accPTf2 ++ newPTfClauses)
+          Tf (tfClauses accPTf2 ++ newTfClauses)
           where
-            newPTfClauses =
+            newTfClauses =
               foldr
                 (mergeLTfClauses (cDst, rDst))
                 []
@@ -199,27 +204,34 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) = RouterProtoTf src routerTf
 -- compute the conditions when ra is better than rb
 -- if the condition is not false, and the condition and the conditions of ca and cb to c'
 -- and construct the new clause
+-- for router tf, if the assign is null, can discard
+-- from router tf, the tf becomes normal tf, not proto tf
 mergeLTfClauses ::
      (Route a)
   => (RouterId, RouterId)
   -> (ProtoTfClause a, ProtoTfClause a)
-  -> [ProtoTfClause a]
-  -> [ProtoTfClause a]
-mergeLTfClauses = undefined
--- mergeLTfClauses (r1, r2) (c1@(ProtoTfClause cond1 rte1), c2@(ProtoTfClause cond2 rte2)) accC =
---   accC'
---   where
---     accC' = undefined
+  -> [TfClause]
+  -> [TfClause]
+mergeLTfClauses (r1, r2) (ProtoTfClause cond1 rte1, ProtoTfClause cond2 rte2) accC =
+  accC'
+  where
     -- compute the conditions when rte1 is better than rte2, and vice versa
-    -- c1'@(TfClause cond1' assign1') = appendClauseVar (show r1) c1
-    -- c2'@(TfClause cond2' assign2') = appendClauseVar (show r2) c2
-    -- prefer1Cond = preferFstCond p assign1' assign2'
-    -- prefer2Cond = preferFstCond p assign2' assign1'
-    -- curCond = TfAnd cond1' cond2'
-    -- -- TODO: if prefer1Cond is false, it is discarded
-    -- newC =
-    --   [ TfClause (TfAnd curCond prefer1Cond) assign1'
-    --   , TfClause (TfAnd curCond prefer2Cond) assign2'
-    --   ]
-    -- accC' = accC ++ newC
-    -- prefer1Cond = prefer
+    ass1 :: TfAssign
+    ass2 :: TfAssign
+    ass1 = appendAssignVar (show r1) $ maybe TfAssignNull toTfAssign rte1
+    ass2 = appendAssignVar (show r2) $ maybe TfAssignNull toTfAssign rte2
+    newCond =
+      TfAnd (appendCondVar (show r1) cond1) (appendCondVar (show r2) cond2)
+    -- concat all conditions
+    accC' = accC ++ catMaybes [newC1, newC2]
+    newC1 = preferFstClause rte1 ass1 ass2
+    newC2 = preferFstClause rte2 ass2 ass1
+    preferFstClause ::
+         Route a => Maybe a -> TfAssign -> TfAssign -> Maybe TfClause
+    preferFstClause rte ass1' ass2' =
+      case newCond' of
+        TfFalse -> Nothing
+        _       -> Just $ TfClause newCond' ass1'
+        -- and all 3 conditions
+      where
+        newCond' = simplifyCond $ TfAnd newCond (preferFstCond rte ass1' ass2')
