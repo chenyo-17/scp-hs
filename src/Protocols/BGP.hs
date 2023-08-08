@@ -106,9 +106,10 @@ bgpRmToProtoTf :: BgpRm -> ProtoTf BgpRoute
 bgpRmToProtoTf = rmToTf TfTrue
   where
     rmToTf :: TfCondition -> BgpRm -> ProtoTf BgpRoute
-    rmToTf _ (BgpRm []) = ProtoTf []
     -- if the condition becomes false, ignore the rest of the items
     rmToTf TfFalse _ = ProtoTf []
+    -- add a default deny clause
+    rmToTf conds (BgpRm []) = ProtoTf [ProtoTfClause conds Nothing]
     rmToTf conds (BgpRm (i:is)) =
       ProtoTf (clause : pTfClauses (rmToTf conds' (BgpRm is)))
         -- for each match in item i, convert it to a TfCondition
@@ -150,7 +151,7 @@ bgpRouteToAssign rte =
      . fromIpPrefix)
     (TfAssign [])
   where
-    -- TODO: this is ugly
+    -- FIXME: this is ugly
     fromIpPrefix :: TfAssign -> TfAssign
     -- assume ip prefix is never reset
     fromIpPrefix = addTfAssignItem ipPrefixVar ipPrefixVar
@@ -239,19 +240,20 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
 -- return the conditions when the first route assign is preferred
 -- the passed assigns have been added with router ids
 -- the first argument is dummy, just to locate the instance
--- TODO: the conversion from assign to attribute is not efficient
+-- FIXME: the conversion from assign to attribute is not efficient
 preferFstBgpCond :: Maybe BgpRoute -> TfAssign -> TfAssign -> TfCondition
 -- if the first assign is null route, it can never be preferred
 preferFstBgpCond _ TfAssignNull _ = TfFalse
 -- if the second assign is null route, the first not null assign is always preferred
 preferFstBgpCond _ _ TfAssignNull = TfTrue
 preferFstBgpCond _ ass1 ass2 =
+  -- prefer lower lp, and then larger from (to prefer external route later)
   TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
     sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
-    smallerFrom = TfCond (getFrom ass1) TfLt (getFrom ass2)
+    smallerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
     getIpPrefix :: TfAssign -> TfExpr
     -- null case is already handled, here it must be just
     getIpPrefix = fromJust . getAssignVal (bgpAttrToExpr BgpIpPrefix)
@@ -309,6 +311,7 @@ instance Show BgpRoute
       , showJust (show BgpNextHop) (bgpNextHop r)
       , showJust (show Community) (community r)
       , showJust (show LocalPref) (localPref r)
+      , showJust (show BgpFrom) (bgpFrom r)
       ]
     where
       showJust :: Show a => String -> Maybe a -> Maybe String

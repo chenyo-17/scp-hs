@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstrainedClassMethods #-}
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE TupleSections           #-}
 {-# LANGUAGE TypeFamilies            #-}
 
 module Protocols.Protocol where
@@ -143,34 +144,48 @@ class ProtocolTf a where
       sTfi = toSimpleSsProtoTf sfi
       l = Link (ssSrc ssi) (ssDst ssi)
       pLTf =
-        foldr concatPTfClauses (ProtoTf []) (prod2PTfs (ssTf sTfe) (ssTf sTfi))
-      concatPTfClauses ::
-           (Route a)
-        => (ProtoTfClause a, ProtoTfClause a)
-        -> ProtoTf a
-        -> ProtoTf a
-      -- if 2 clauses can concat, add it to the new tf
-      -- otherwise, do nothing
-      -- if the fist route is null route, no need to concat the second clause condition
-      concatPTfClauses (newC@(ProtoTfClause _ Nothing), _) (ProtoTf pcs) =
-        ProtoTf (newC : pcs)
-      -- if the second route is null route, still need to concat
-      concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) pTf@(ProtoTf pcs) =
-        case newCond' of
-          TfFalse -> pTf
-          _       -> ProtoTf (newPc : pcs)
+        foldr
+          concatPTfClauses
+          (ProtoTf [])
+          (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
+            -- product 2 session proto tf clauses, but if the first clause is null route,
+            -- then pair it with Nothing
         where
-          newCond = substCond cond2 (toTfAssign rte1)
-          newCond' = simplifyCond (TfAnd cond1 newCond)
-          -- this is signature is here because otherwise the compiler cannot infer the type of rte1
-          newRte :: Route a => a -> Maybe a -> Maybe a
-          newPc = ProtoTfClause newCond' (newRte rte1 rte2)
-          newRte r1 = fmap (updateRoute r1)
-
--- given a pair of protoTfs, product each protoTfClause pair
-prod2PTfs ::
-     Route a => ProtoTf a -> ProtoTf a -> [(ProtoTfClause a, ProtoTfClause a)]
-prod2PTfs pTf1 pTf2 = [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
+          prod2SsPTfs ::
+               Route a
+            => ProtoTf a
+            -> ProtoTf a
+            -> [(ProtoTfClause a, ProtoTfClause a)]
+          prod2SsPTfs (ProtoTf []) _ = [] -- cannot be empty in practice
+          prod2SsPTfs (ProtoTf (pTfC1:pTfC1s)) pTf2@(ProtoTf pTfC2s) =
+            case pRoute pTfC1 of
+              Nothing ->
+                (pTfC1, ProtoTfClause TfTrue Nothing) -- dummy clause, not checked in concatPTfClauses
+                  : prod2SsPTfs (ProtoTf pTfC1s) pTf2
+              _ -> map (pTfC1, ) pTfC2s ++ prod2SsPTfs (ProtoTf pTfC1s) pTf2
+            -- concat 2 session proto tf clauses and add it to the new tf
+          concatPTfClauses ::
+               (Route a)
+            => (ProtoTfClause a, ProtoTfClause a)
+            -> ProtoTf a
+            -> ProtoTf a
+            -- if 2 clauses can concat, add it to the new tf
+            -- otherwise, do nothing
+            -- if the fist route is null route, no need to concat the second clause condition
+          concatPTfClauses (newC@(ProtoTfClause _ Nothing), _) (ProtoTf pcs) =
+            ProtoTf (newC : pcs)
+            -- if the second route is null route, still need to concat
+          concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) pTf@(ProtoTf pcs) =
+            case newCond' of
+              TfFalse -> pTf
+              _       -> ProtoTf (newPc : pcs)
+            where
+              newCond = substCond cond2 (toTfAssign rte1)
+              newCond' = simplifyCond (TfAnd cond1 newCond)
+                -- this is signature is here because otherwise the compiler cannot infer the type of rte1
+              newRte :: Route a => a -> Maybe a -> Maybe a
+              newPc = ProtoTfClause newCond' (newRte rte1 rte2)
+              newRte r1 = fmap (updateRoute r1)
 
 -- given a list of link tfs which has the same source router,
 -- convert them to a router tf
@@ -198,7 +213,15 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) = RouterProtoTf src routerTf
               foldr
                 (mergeLTfClauses (cDst, rDst))
                 []
-                (prod2PTfs curPTf' restPTf)
+                (prod2LPTfs curPTf' restPTf)
+            -- given a pair of link protoTfs, product each protoTfClause pair
+            prod2LPTfs ::
+                 Route a
+              => ProtoTf a
+              -> ProtoTf a
+              -> [(ProtoTfClause a, ProtoTfClause a)]
+            prod2LPTfs pTf1 pTf2 =
+              [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
 
 -- given a pair of pTf clauses ca and cb, and their associated dst routers,
 -- compute the conditions when ra is better than rb
