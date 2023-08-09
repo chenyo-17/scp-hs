@@ -1,10 +1,11 @@
 module Protocols.Base.Network where
 
+import           Control.Parallel.Strategies
+import           Data.Maybe
 import           Functions.Transfer
 import           Protocols.Base.Router
 
 -- FIXME: protocol information is lost!
--- TODO: make sure it supports lazy evaluation
 newtype NetProtoTf =
   NetProtoTf Tf
   deriving (Eq)
@@ -16,17 +17,18 @@ instance Show NetProtoTf where
 -- convert them to a net proto tf
 -- TODO: specify node ordering
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
-toNetProtoTf rTfs = foldr mergeRTfs (NetProtoTf (Tf [])) prodTfClauses
+toNetProtoTf rTfs =
+  NetProtoTf $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parList rpar)
   where
     prodTfClauses :: [[TfClause]]
     prodTfClauses = mapM (tfClauses . rTf) rTfs
-        -- given a list of tf clauses, merge them to a net tf clause
-    mergeRTfs :: [TfClause] -> NetProtoTf -> NetProtoTf
+    -- given a list of tf clauses, merge them to a net tf clause
+    mergeRTfs :: [TfClause] -> Maybe TfClause
     -- not add false conditions
-    mergeRTfs tfCs accTf@(NetProtoTf (Tf accTfCs)) =
+    mergeRTfs tfCs =
       case tfCond newClause of
-        TfFalse -> accTf
-        _       -> NetProtoTf (Tf (newClause : accTfCs))
+        TfFalse -> Nothing
+        _       -> Just newClause
       where
         newClause = foldr concatClauses (TfClause TfTrue TfAssignNull) tfCs
         -- for each new clause, first substitute last assign

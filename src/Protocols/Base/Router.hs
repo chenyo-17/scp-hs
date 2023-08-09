@@ -90,7 +90,7 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
 -- not first use any to check whether all lTfs have null tf clauses is because
 -- in practice it is rare, e.g., when consider session failure
 -- FIXME: this is inefficient and ugly! Try not to go through all lin tfs again
--- FIXME: use foldr!
+-- FIXME: use concurrency!
 toRouterNullTf :: Route a => RouterId -> [LinkProtoTf a] -> [TfClause]
 toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
   where
