@@ -5,9 +5,10 @@
 
 module Protocols.Base.Protocol where
 
-import           Data.Kind          (Type)
+import           Control.Parallel.Strategies
+import           Data.Kind                   (Type)
 import           Data.List
-import           Data.Maybe         (mapMaybe)
+import           Data.Maybe                  (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
 
@@ -105,7 +106,9 @@ class ProtocolTf a where
   toSimpleSsProtoTf sF = sPTf {ssTf = simplePTf}
     where
       sPTf = toSsProtoTf sF
-      simplePTf = ProtoTf (mapMaybe simpleCond ((pTfClauses . ssTf) sPTf))
+      simplePTf =
+        ProtoTf
+          (mapMaybe simpleCond ((pTfClauses . ssTf) sPTf) `using` parList rpar)
       simpleCond (ProtoTfClause cond route) =
         case cond' of
           TfFalse -> Nothing
@@ -125,6 +128,7 @@ class ProtocolTf a where
       sTfe = toSimpleSsProtoTf sfe
       sTfi = toSimpleSsProtoTf sfi
       l = Link (ssSrc ssi) (ssDst ssi)
+      -- FIXME: use concurrency!
       pLTf =
         foldl'
           concatPTfClauses
