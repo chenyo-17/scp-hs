@@ -263,6 +263,17 @@ preferFstBgpCond _ ass1 ass2
     getFrom :: TfAssign -> TfExpr
     getFrom = fromJust . getAssignVal (bgpAttrToExpr BgpFrom)
 
+-- convert a null BgpRoute to a TfAssign
+toNullBgpAssign :: Maybe BgpRoute -> TfAssign
+toNullBgpAssign _ =
+  TfAssign [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
+  where
+    nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) TfNull
+    nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) TfNull
+    nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) TfNull
+    nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) TfNull
+    nullCommunity = TfAssignItem (bgpAttrToExpr Community) TfNull
+
 instance ProtoAttr BgpAttr where
   toTfExpr = bgpAttrToExpr
 
@@ -283,6 +294,7 @@ instance Route BgpRoute where
   preferFstCond = preferFstBgpCond
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
+  toNullTfAssign = toNullBgpAssign
 
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl

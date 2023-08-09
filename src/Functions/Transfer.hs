@@ -6,6 +6,7 @@ import           Data.Word
 data TfExpr
   = TfVar String
   | TfConst TfLiteral
+  | TfNull
   deriving (Eq)
 
 data TfOp
@@ -178,6 +179,31 @@ simplifyCond cond =
           if i1 /= i2
             then TfTrue
             else TfFalse
+    TfCond e1 op e2
+      | e1 == e2 ->
+        case op of
+          TfEq -> TfTrue
+          TfNe -> TfFalse
+          TfGe -> TfTrue
+          TfLe -> TfTrue
+          TfGt -> TfFalse
+          TfLt -> TfFalse
+    TfCond TfNull op _ ->
+      case op of
+        TfEq -> TfFalse
+        TfNe -> TfTrue
+        TfGe -> TfFalse
+        TfLe -> TfTrue
+        TfGt -> TfFalse
+        TfLt -> TfTrue
+    TfCond _ op TfNull ->
+      case op of
+        TfEq -> TfFalse
+        TfNe -> TfTrue
+        TfGe -> TfTrue
+        TfLe -> TfFalse
+        TfGt -> TfTrue
+        TfLt -> TfFalse
     _ -> cond
 
 -- substitute the variable in the condition with the assign
@@ -277,6 +303,7 @@ instance Show TfExpr where
     case expr of
       TfVar v     -> v
       TfConst lit -> show lit
+      TfNull      -> "null"
 
 instance Show TfCondition where
   show cond =

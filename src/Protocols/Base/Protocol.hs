@@ -6,7 +6,7 @@
 module Protocols.Base.Protocol where
 
 import           Data.Kind          (Type)
-import           Data.Maybe         (mapMaybe)
+import           Data.Maybe         (mapMaybe, isNothing)
 import           Data.Word
 import           Functions.Transfer
 
@@ -34,6 +34,8 @@ data Session = Session
   , ssDir :: SessionDir
   , ssDst :: RouterId
   } deriving (Eq)
+
+
 
 -- user API for creating a session
 toSession :: RouterId -> SessionDir -> RouterId -> Session
@@ -85,6 +87,8 @@ class Route a where
   toTfAssign :: a -> TfAssign
   -- update first route's attributes with second route's attributes
   updateRoute :: a -> a -> a
+  -- convert a null route to a tf assign
+  toNullTfAssign :: Maybe a -> TfAssign
 
 class ProtoAttr a where
   -- convert each attribute to a tf expression

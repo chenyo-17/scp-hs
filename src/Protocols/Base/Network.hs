@@ -14,6 +14,8 @@ instance Show NetProtoTf where
 
 -- given a list of router proto tfs of the same protocol,
 -- convert them to a net proto tf
+-- TODO: specify node ordering
+
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
 toNetProtoTf rTfs = foldr mergeRTfs (NetProtoTf (Tf [])) prodTfClauses
   where
