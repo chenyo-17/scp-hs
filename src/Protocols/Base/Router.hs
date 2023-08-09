@@ -49,9 +49,10 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
               where
                 cond = appendCondVar (show dst) pc
                 ass = appendAssignVal (show dst) (toTfAssign pr)
-        -- for every pair of accTf and pTf clauses, merge them and add to
-        -- new list
+        -- for every pair of accTf and pTf clauses, 
+        -- merge them and add to the new list
         -- accTfCs is always rewritten
+        -- FIXME: add concurrency!
         concatPTfs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) accTfCs =
           foldr mergeTfClauses [] pTfCs
           where
@@ -89,8 +90,6 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
 -- if all link tf exists null tf clauses, concat them
 -- not first use any to check whether all lTfs have null tf clauses is because
 -- in practice it is rare, e.g., when consider session failure
--- FIXME: this is inefficient and ugly! Try not to go through all lin tfs again
--- FIXME: use concurrency!
 toRouterNullTf :: Route a => RouterId -> [LinkProtoTf a] -> [TfClause]
 toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
   where
@@ -111,6 +110,8 @@ toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
           filter (\(ProtoTfClause _ rte) -> isNothing rte) $ pTfClauses pTf_
     -- given a list of link tfs where each link tf only has null tf clauses,
     -- product all null tf clauses
+    -- FIXME: add concurrency here, it seems it is more efficient than foldr as 
+    -- the list is always traversed
     prodNullTfClauses :: Route a => [ProtoTf a] -> [TfClause]
     prodNullTfClauses [] = []
     prodNullTfClauses pTfs = foldr toNullTfClause [] $ mapM pTfClauses pTfs

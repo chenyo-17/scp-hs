@@ -6,6 +6,7 @@
 module Protocols.Base.Protocol where
 
 import           Data.Kind          (Type)
+import           Data.List
 import           Data.Maybe         (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
@@ -125,7 +126,7 @@ class ProtocolTf a where
       sTfi = toSimpleSsProtoTf sfi
       l = Link (ssSrc ssi) (ssDst ssi)
       pLTf =
-        foldr
+        foldl'
           concatPTfClauses
           (ProtoTf [])
           (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
@@ -147,16 +148,16 @@ class ProtocolTf a where
             -- concat 2 session proto tf clauses and add it to the new tf
           concatPTfClauses ::
                (Route a)
-            => (ProtoTfClause a, ProtoTfClause a)
-            -> ProtoTf a
+            => ProtoTf a
+            -> (ProtoTfClause a, ProtoTfClause a)
             -> ProtoTf a
             -- if 2 clauses can concat, add it to the new tf
             -- otherwise, do nothing
             -- if the fist route is null route, no need to concat the second clause condition
-          concatPTfClauses (newC@(ProtoTfClause _ Nothing), _) (ProtoTf pcs) =
+          concatPTfClauses (ProtoTf pcs) (newC@(ProtoTfClause _ Nothing), _) =
             ProtoTf (newC : pcs)
             -- if the second route is null route, still need to concat
-          concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) pTf@(ProtoTf pcs) =
+          concatPTfClauses pTf@(ProtoTf pcs) (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) =
             case newCond' of
               TfFalse -> pTf
               _       -> ProtoTf (newPc : pcs)
