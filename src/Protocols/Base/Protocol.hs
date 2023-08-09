@@ -6,7 +6,7 @@
 module Protocols.Base.Protocol where
 
 import           Data.Kind          (Type)
-import           Data.Maybe         (mapMaybe, isNothing)
+import           Data.Maybe         (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
 
@@ -34,8 +34,6 @@ data Session = Session
   , ssDir :: SessionDir
   , ssDst :: RouterId
   } deriving (Eq)
-
-
 
 -- user API for creating a session
 toSession :: RouterId -> SessionDir -> RouterId -> Session

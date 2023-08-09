@@ -51,41 +51,30 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
             prod2LPTfs pTf1 pTf2 =
               [(c1, c2) | c1 <- pTfClauses pTf1, c2 <- pTfClauses pTf2]
 
--- given a list of link tfs and the source id,
+-- given a list of link tfs and the source id (used to append assign var),
 -- filter all null tf clauses in each link tf,
 -- if all link tf exists null tf clauses, concat them
 -- not first use any to check whether all lTfs have null tf clauses is because
 -- in practice it is rare, e.g., when consider session failure
 -- FIXME: this is inefficient and ugly! Try not to go through all lin tfs again
 toRouterNullTf :: Route a => RouterId -> [LinkProtoTf a] -> [TfClause]
-toRouterNullTf src lTfs =
-  if length (nullLTfClauses lTfs) == length lTfs
-    then prodNullTfClauses (nullLTfClauses lTfs)
-  -- if two lists do not have the same length,
-  -- means there is a link tf that does not have null clauses
-    else []
+toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
   where
-    nullLTfClauses :: Route a => [LinkProtoTf a] -> [ProtoTf a]
-    nullLTfClauses = mapMaybe onlyNullLTfClauses
     -- convert each link tf to a link tf where only null tf clauses remain
     -- if such link tf does not exist, return Nothing
-    onlyNullLTfClauses :: Route a => LinkProtoTf a -> Maybe (ProtoTf a)
-    onlyNullLTfClauses (LinkProtoTf (Link _ dst) pTf) =
-      if null (nullClauses pTf)
-        then Nothing
-        else Just pTf'
-      where
-        isNullTfClause :: Route a => ProtoTfClause a -> Bool
-        isNullTfClause (ProtoTfClause _ rte) = isNothing rte
+    onlyNullLTfClauses :: Route a => LinkProtoTf a -> ProtoTf a
+    onlyNullLTfClauses (LinkProtoTf (Link _ dst) pTf) = pTf'
         -- filter null tf clauses
-        -- the first argument is to make the type clear
-        nullClauses :: Route a => ProtoTf a -> [ProtoTfClause a]
-        nullClauses pTf_ = filter isNullTfClause $ pTfClauses pTf_
+      where
         pTf' = ProtoTf (map (appendTfCond (show dst)) $ nullClauses pTf)
         -- append link dst to the condition variables
         appendTfCond :: String -> ProtoTfClause a -> ProtoTfClause a
         appendTfCond s (ProtoTfClause cond rte) =
           ProtoTfClause (appendCondVar s cond) rte
+        -- the first argument is to make the type clear
+        nullClauses :: Route a => ProtoTf a -> [ProtoTfClause a]
+        nullClauses pTf_ =
+          filter (\(ProtoTfClause _ rte) -> isNothing rte) $ pTfClauses pTf_
     -- given a list of link tfs where each link tf only has null tf clauses,
     -- product all null tf clauses
     prodNullTfClauses :: Route a => [ProtoTf a] -> [TfClause]
