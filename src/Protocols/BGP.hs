@@ -141,8 +141,21 @@ bgpItemToClause (RmItem action matches sets) =
 -- convert a BgpRoute to a TfAssign
 -- all attributes must be covered,
 -- if some attributes are not set, set it to the attribute var
-bgpRouteToAssign :: BgpRoute -> TfAssign
-bgpRouteToAssign rte =
+bgpRouteToAssign :: Maybe BgpRoute -> TfAssign
+bgpRouteToAssign Nothing = toNullBgpAssign
+  where
+    -- convert a null BgpRoute to a TfAssign
+    toNullBgpAssign :: TfAssign
+    toNullBgpAssign =
+      TfAssign
+        [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
+      where
+        nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) TfNull
+        nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) TfNull
+        nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) TfNull
+        nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) TfNull
+        nullCommunity = TfAssignItem (bgpAttrToExpr Community) TfNull
+bgpRouteToAssign (Just rte) =
   (fromBgpFrom
      . fromLocalPref
      . fromBgpNextHop
@@ -241,20 +254,21 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
 -- the first argument is dummy, just to locate the instance
 -- FIXME: the conversion from assign to attribute is not efficient
 preferFstBgpCond :: Maybe BgpRoute -> TfAssign -> TfAssign -> TfCondition
--- if the first assign is null route, it can never be preferred
-preferFstBgpCond _ TfAssignNull _ = TfFalse
--- if the second assign is null route, the first not null assign is always preferred
-preferFstBgpCond _ _ TfAssignNull = TfTrue
 preferFstBgpCond _ ass1 ass2
+  -- if the first assign is null route, it can never be preferred
+  | isNullAssign ass1 = TfFalse
+  -- if the second assign is null route, the first not null assign is always preferred
+  | isNullAssign ass2 = TfTrue
+  | otherwise =
+    TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
   -- prefer lower lp, and then larger from (to prefer external route later)
- = TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
     sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
     smallerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
     getIpPrefix :: TfAssign -> TfExpr
-    -- null case is already handled, here it must be just
+      -- null case is already handled, here it must be just
     getIpPrefix = fromJust . getAssignVal (bgpAttrToExpr BgpIpPrefix)
     getLocalPref1 :: TfExpr
     getLocalPref1 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass1
@@ -262,17 +276,6 @@ preferFstBgpCond _ ass1 ass2
     getLocalPref2 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass2
     getFrom :: TfAssign -> TfExpr
     getFrom = fromJust . getAssignVal (bgpAttrToExpr BgpFrom)
-
--- convert a null BgpRoute to a TfAssign
-toNullBgpAssign :: Maybe BgpRoute -> TfAssign
-toNullBgpAssign _ =
-  TfAssign [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
-  where
-    nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) TfNull
-    nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) TfNull
-    nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) TfNull
-    nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) TfNull
-    nullCommunity = TfAssignItem (bgpAttrToExpr Community) TfNull
 
 instance ProtoAttr BgpAttr where
   toTfExpr = bgpAttrToExpr
@@ -294,7 +297,6 @@ instance Route BgpRoute where
   preferFstCond = preferFstBgpCond
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
-  toNullTfAssign = toNullBgpAssign
 
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl

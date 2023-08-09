@@ -56,6 +56,13 @@ data TfAssign
   | TfAssignNull -- null assignment
   deriving (Eq)
 
+-- an assign is null if it is TfAssignNull or all its items are null
+isNullAssign :: TfAssign -> Bool
+isNullAssign assign =
+  case assign of
+    TfAssign items -> all (\item -> assignValue item == TfNull) items
+    TfAssignNull   -> True
+
 -- lookup an assign value by a variable
 getAssignVal :: TfExpr -> TfAssign -> Maybe TfExpr
 getAssignVal var assign =

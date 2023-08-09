@@ -82,11 +82,10 @@ class Route a where
   -- the first argument is just use to locate the instance
   preferFstCond :: Maybe a -> TfAssign -> TfAssign -> TfCondition
   -- convert a route to a tf assign
-  toTfAssign :: a -> TfAssign
+  -- the route can be null route
+  toTfAssign :: Maybe a -> TfAssign
   -- update first route's attributes with second route's attributes
   updateRoute :: a -> a -> a
-  -- convert a null route to a tf assign
-  toNullTfAssign :: Maybe a -> TfAssign
 
 class ProtoAttr a where
   -- convert each attribute to a tf expression
@@ -162,7 +161,7 @@ class ProtocolTf a where
               TfFalse -> pTf
               _       -> ProtoTf (newPc : pcs)
             where
-              newCond = substCond cond2 (toTfAssign rte1)
+              newCond = substCond cond2 (toTfAssign $ Just rte1)
               newCond' = simplifyCond (TfAnd cond1 newCond)
                 -- this is signature is here because otherwise the compiler cannot infer the type of rte1
               newRte :: Route a => a -> Maybe a -> Maybe a
