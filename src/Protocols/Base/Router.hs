@@ -27,7 +27,7 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
     -- only append assign var when the router f is final!
     -- otherwise cannot extract route attribute from assign
     routerTf =
-      map (\x -> TfClause (tfCond x) (appendAssignVar (show src) (tfAssign x)))
+      map (\x -> x {tfAssign = appendAssignVar (show src) (tfAssign x)})
         $ computeRouterTf lTfs
     -- given the current Tf, and a list of link tfs,
     -- combine the head linkTf and each of the rest linkTfs and compute the new pTf clauses
