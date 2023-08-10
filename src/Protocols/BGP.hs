@@ -270,8 +270,14 @@ preferFstBgpCond _ ass1 ass2
   | isNullAssign ass1 = TfFalse
   -- if the second assign is null route, the first not null assign is always preferred
   | isNullAssign ass2 = TfTrue
+  -- if two routes have different ip prefix, always prefer first
+  -- TODO: consider one ip is a subset of the other
   | otherwise =
-    TfAnd sameIpPrefix (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom))
+    TfOr
+      (TfNot sameIpPrefix)
+      (TfAnd
+         sameIpPrefix
+         (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom)))
   -- prefer lower lp, and then larger from (to prefer external route later)
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
