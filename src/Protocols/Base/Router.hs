@@ -2,7 +2,7 @@ module Protocols.Base.Router where
 
 import           Control.Parallel.Strategies
 import           Data.List                   (foldl')
-import           Data.Maybe                  (isNothing, mapMaybe)
+import           Data.Maybe                  (mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Protocol
 
@@ -17,11 +17,12 @@ instance Show RouterProtoTf where
 
 -- given a list of link tfs which has the same source router,
 -- convert them to a router tf
+-- both routerTf and toRouterNullTf consist of 2 levels of map
 toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf
 -- the list cannot be empty, if it is, return a dummy router tf
 toRouterProtoTf [] = RouterProtoTf 0 (Tf [])
 toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
-  RouterProtoTf src (Tf $ routerTf ++ toRouterNullTf src lTfs)
+  RouterProtoTf src (Tf $ routerTf ++ toRouterNullTf lTfs)
   where
     -- only append assign var when the router f is final!
     -- otherwise cannot extract route attribute from assign
@@ -91,46 +92,49 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
 -- given a list of link tfs and the source id (used to append assign var),
 -- filter all null tf clauses in each link tf,
 -- if all link tf exists null tf clauses, concat them
--- not first use any to check whether all lTfs have null tf clauses is because
--- in practice it is rare, e.g., when consider session failure
-toRouterNullTf :: Route a => RouterId -> [LinkProtoTf a] -> [TfClause]
-toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
+toRouterNullTf :: Route a => [LinkProtoTf a] -> [TfClause]
+toRouterNullTf [] = []
+-- use foldr because once it returns [], it will directly return
+-- use a dummy initial list
+toRouterNullTf lPTfs = foldr prodNullTfCs [TfClause TfFalse TfAssignNull] lPTfs
   where
-    -- convert each link tf to a link tf where only null tf clauses remain
-    -- if such link tf does not exist, return Nothing
-    onlyNullLTfClauses :: Route a => LinkProtoTf a -> ProtoTf a
-    onlyNullLTfClauses (LinkProtoTf (Link _ dst) pTf) = pTf'
-        -- filter null tf clauses
+    -- product each condition in accTfCs with each null tf clause in pTf,
+    -- and add to new list
+    -- accTfCs is always rewritten
+    -- if the new tf clauses is empty, directly return
+    prodNullTfCs :: Route a => LinkProtoTf a -> [TfClause] -> [TfClause]
+    prodNullTfCs _ [] = []
+    prodNullTfCs (LinkProtoTf (Link src dst) (ProtoTf pTfCs)) [TfClause TfFalse TfAssignNull] =
+      mapMaybe toNullTfClause pTfCs
       where
-        pTf' = ProtoTf (map (appendTfCond (show dst)) $ nullClauses pTf)
-        -- append link dst to the condition variables
-        appendTfCond :: String -> ProtoTfClause a -> ProtoTfClause a
-        appendTfCond s (ProtoTfClause cond rte) =
-          ProtoTfClause (appendCondVar s cond) rte
-        -- the first argument is to make the type clear
-        nullClauses :: Route a => ProtoTf a -> [ProtoTfClause a]
-        nullClauses pTf_ =
-          filter (\(ProtoTfClause _ rte) -> isNothing rte) $ pTfClauses pTf_
-    -- given a list of link tfs where each link tf only has null tf clauses,
-    -- product all null tf clauses
-    -- FIXME: add concurrency here, it seems it is more efficient than foldr as
-    -- the list is always traversed
-    prodNullTfClauses :: Route a => [ProtoTf a] -> [TfClause]
-    prodNullTfClauses [] = []
-    prodNullTfClauses pTfs = foldr toNullTfClause [] $ mapM pTfClauses pTfs
-      -- and the condition in each clauses, simplify them,
-      -- construct a new tf clause with tf assign null
-      where
-        toNullTfClause ::
-             Route a => [ProtoTfClause a] -> [TfClause] -> [TfClause]
-        toNullTfClause [] accC = accC
-        toNullTfClause pTfCs accC =
-          case newCond of
-            TfFalse -> accC
-          -- expand the null route to full attribute assign
-            _       -> TfClause newCond newAssign : accC
+        toNullTfClause :: Route a => ProtoTfClause a -> Maybe TfClause
+        toNullTfClause (ProtoTfClause cond rte) =
+          case rte of
+            Nothing -> Just $ TfClause newCond newAssign
+            _       -> Nothing
           where
-            newCond = simplifyCond $ foldr (TfAnd . pCond) TfTrue pTfCs
+            newCond = simplifyCond $ appendCondVar (show dst) cond
+            -- null assign
             newAssign = appendAssignVar (show src) (toTfAssign rte)
-          -- get a dummy null route to pass to toNullTfAssign
-            rte = (pRoute . head) pTfCs
+    prodNullTfCs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) accTfCs_ =
+      concatMap concatNullTfCond pTfCs `using` parList rpar
+        -- concat one pTf clause with each accTf clause
+      where
+        concatNullTfCond :: Route a => ProtoTfClause a -> [TfClause]
+        -- filter null tf clauses
+        concatNullTfCond pTfC =
+          case pRoute pTfC of
+            Nothing -> mapMaybe (concatOneAccTf pTfC') accTfCs_
+            _       -> []
+            -- append dst to cond var
+          where
+            pTfC' = pTfC {pCond = appendCondVar (show dst) $ pCond pTfC}
+            -- concat one accTf clause with one pTf clause
+            concatOneAccTf ::
+                 Route a => ProtoTfClause a -> TfClause -> Maybe TfClause
+            concatOneAccTf pTfC_ accTfC =
+              case newCond of
+                TfFalse -> Nothing
+                _       -> Just $ TfClause newCond (tfAssign accTfC) -- the assign is always the same null assign
+              where
+                newCond = simplifyCond $ TfAnd (tfCond accTfC) (pCond pTfC_)
