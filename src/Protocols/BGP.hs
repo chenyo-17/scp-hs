@@ -229,12 +229,12 @@ bgpMatchToCond m =
     -- for k prefix list items, there are 2 * k conditions to be Or'ed
     MatchIpPrefix pl -> foldr concatPlItem TfFalse pl
       where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
-            concatPlItem _ TfFalse = TfFalse
-            concatPlItem pli cond  = TfOr (plItemToCond pli) cond
+            concatPlItem _ TfTrue = TfTrue
+            concatPlItem pli cond = TfOr (plItemToCond pli) cond
     MatchCommunity cl -> foldr concatClItem TfFalse cl
       where concatClItem :: BgpClItem -> TfCondition -> TfCondition
-            concatClItem _ TfFalse = TfFalse
-            concatClItem ci cond   = TfOr (clItemToCond ci) cond
+            concatClItem _ TfTrue = TfTrue
+            concatClItem ci cond  = TfOr (clItemToCond ci) cond
 
 -- convert a BgpPlItem to a TfCondition
 plItemToCond :: BgpPlItem -> TfCondition
