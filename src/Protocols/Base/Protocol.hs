@@ -7,7 +7,6 @@ module Protocols.Base.Protocol where
 
 import           Control.Parallel.Strategies
 import           Data.Kind                   (Type)
-import           Data.List
 import           Data.Maybe                  (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
@@ -123,17 +122,14 @@ class ProtocolTf a where
   -- cannot remove null route, as it is still compared with other link tf!
   toLinkProtoTf ::
        (Route (RouteType a)) => SessionFPair a -> LinkProtoTf (RouteType a)
-  toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l pLTf
+  toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l (ProtoTf pLTf)
     where
       sTfe = toSimpleSsProtoTf sfe
       sTfi = toSimpleSsProtoTf sfi
       l = Link (ssSrc ssi) (ssDst ssi)
-      -- FIXME: use concurrency!
       pLTf =
-        foldl'
-          concatPTfClauses
-          (ProtoTf [])
-          (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
+        mapMaybe concatPTfClauses (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
+          `using` parList rpar
             -- product 2 session proto tf clauses, but if the first clause is null route,
             -- then pair it with Nothing
         where
@@ -152,19 +148,17 @@ class ProtocolTf a where
             -- concat 2 session proto tf clauses and add it to the new tf
           concatPTfClauses ::
                (Route a)
-            => ProtoTf a
-            -> (ProtoTfClause a, ProtoTfClause a)
-            -> ProtoTf a
+            => (ProtoTfClause a, ProtoTfClause a)
+            -> Maybe (ProtoTfClause a)
             -- if 2 clauses can concat, add it to the new tf
             -- otherwise, do nothing
             -- if the fist route is null route, no need to concat the second clause condition
-          concatPTfClauses (ProtoTf pcs) (newC@(ProtoTfClause _ Nothing), _) =
-            ProtoTf (newC : pcs)
+          concatPTfClauses (newC@(ProtoTfClause _ Nothing), _) = Just newC
             -- if the second route is null route, still need to concat
-          concatPTfClauses pTf@(ProtoTf pcs) (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) =
+          concatPTfClauses (ProtoTfClause cond1 (Just rte1), ProtoTfClause cond2 rte2) =
             case newCond' of
-              TfFalse -> pTf
-              _       -> ProtoTf (newPc : pcs)
+              TfFalse -> Nothing
+              _       -> Just newPc
             where
               newCond = substCond cond2 (toTfAssign $ Just rte1)
               newCond' = simplifyCond (TfAnd cond1 newCond)

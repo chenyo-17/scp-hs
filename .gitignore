@@ -17,6 +17,7 @@ cabal-dev
 
 # If you generate documentation locally
 doc/
+test/
 
 # Cabal sandbox directory
 .cabal-sandbox/
