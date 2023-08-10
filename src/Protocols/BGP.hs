@@ -2,7 +2,7 @@
 
 module Protocols.BGP where
 
-import           Data.List               (intercalate)
+import           Data.List               (foldl', intercalate)
 import           Data.Maybe
 import           Data.Word
 import           Functions.Transfer
@@ -128,10 +128,11 @@ bgpItemToClause (RmItem action matches sets) =
     Deny   -> ProtoTfClause conds Nothing
   where
     conds = foldr (TfAnd . bgpMatchToCond) TfTrue matches
-    rte = foldr stepSet defaultBgpRoute sets
+    -- the sets is always consumed
+    rte = foldl' stepSet defaultBgpRoute sets
     -- accumulate all BgpSets into a single BgpRoute
-    stepSet :: BgpSet -> BgpRoute -> BgpRoute
-    stepSet s r =
+    stepSet :: BgpRoute -> BgpSet -> BgpRoute
+    stepSet r s =
       case s of
         SetLocalPref lp  -> r {localPref = Just lp}
         SetBgpNextHop nh -> r {bgpNextHop = Just nh}
@@ -285,7 +286,7 @@ instance ProtocolTf BgpRm where
   toSsProtoTf (ss@(Session _ sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
     -- TODO: also and additional match, e.g., matchSession
-    -- FIXME: this should not be implemented here
+    -- TODO: think about how to let Protocol handle additional attribute
     where
       rm' =
         if sDir == Import

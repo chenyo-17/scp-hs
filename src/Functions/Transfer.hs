@@ -1,6 +1,6 @@
 module Functions.Transfer where
 
-import           Data.List (intercalate)
+import           Data.List (foldl', intercalate)
 import           Data.Word
 
 data TfExpr
@@ -220,23 +220,24 @@ substCond :: TfCondition -> TfAssign -> TfCondition
 -- if the assign of export (first clause) is null
 -- then the new condition is always false
 substCond _ TfAssignNull = TfFalse
-substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
+-- not use map as it has sharing
+substCond cond (TfAssign as) = simplifyCond $ foldl' substEach cond as
   where
     -- substitute all instances of v in cond
-    substEach :: TfAssignItem -> TfCondition -> TfCondition
-    substEach a@(TfAssignItem (TfVar v) e) cond' =
+    substEach :: TfCondition -> TfAssignItem -> TfCondition
+    substEach cond' a@(TfAssignItem (TfVar v) e) =
       case cond' of
         -- the variable can only appears in TfCond as a single var
         TfCond (TfVar v') op e2
           | v == v' -> TfCond e op e2
         TfCond e1 op (TfVar v')
           | v == v' -> TfCond e1 op e
-        TfNot c -> TfNot $ substEach a c
-        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
-        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+        TfNot c -> TfNot $ substEach c a
+        TfAnd c1 c2 -> TfAnd (substEach c1 a) (substEach c2 a)
+        TfOr c1 c2 -> TfOr (substEach c1 a) (substEach c2 a)
         _ -> cond'
     -- the key in an tfAssign must be a var
-    substEach _ cond' = cond'
+    substEach cond' _ = cond'
 
 -- concatenate two TfClauses to one TfClause
 -- the check of the second clause cond is based on the first clause's assign
@@ -261,7 +262,7 @@ concatTfClauses (TfClause c1 a1, TfClause c2 a2) =
 -- combine two assigns, assume there is no duplicate keys
 concat2Assigns :: TfAssign -> TfAssign -> TfAssign
 -- if some assign is null, return the other one
--- this is required when concatenating a list of assigns with foldr
+-- this is required when concatenating a list of assigns with fold
 concat2Assigns TfAssignNull a = a
 concat2Assigns a TfAssignNull = a
 -- the result cannot be null, as the null case has been handled
@@ -273,8 +274,7 @@ concat2Assigns a1 a2 = TfAssign assignList
     assignList =
       let TfAssign l1 = a1
           TfAssign l2 = a2
-      -- reverse the order because of foldr starts from the end
-       in l2 ++ l1
+       in l1 ++ l2
 
 -- append a suffix to all TfVar in the condition
 appendCondVar :: String -> TfCondition -> TfCondition
