@@ -96,5 +96,7 @@ main = do
   print rTf1
   print rTf2
   -- print network tfs
-  -- let nTf = toNetProtoTf [rTf1, rTf2]
-  -- print nTf
+  let nTf = toNetProtoTf [rTf1, rTf2]
+  print nTf
+  let fpCond = toFpCond nTf
+  putStrLn $ showFpCond fpCond

@@ -87,6 +87,16 @@ addTfAssignItem var value assign =
     TfAssign items -> TfAssign $ TfAssignItem var value : items
     TfAssignNull   -> TfAssignNull
 
+-- convert a TfAssign to a TfCondition by equaling the var and value
+assignToCond :: TfAssign -> TfCondition
+assignToCond TfAssignNull = TfFalse
+assignToCond (TfAssign items) = foldr concatAssign TfTrue items
+  where
+    concatAssign :: TfAssignItem -> TfCondition -> TfCondition
+    concatAssign _ TfFalse = TfFalse
+    concatAssign (TfAssignItem var val) cond =
+      simplifyCond $ TfAnd cond (TfCond var TfEq val)
+
 -- simplify one TfCondition
 -- TODO: cannot detect a == b && b == a are the same
 -- TODO: cannot detect a == c && a == b is false
@@ -221,23 +231,24 @@ substCond :: TfCondition -> TfAssign -> TfCondition
 -- then the new condition is always false
 substCond _ TfAssignNull = TfFalse
 -- not use map as it has sharing
-substCond cond (TfAssign as) = simplifyCond $ foldl' substEach cond as
+substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
   where
     -- substitute all instances of v in cond
-    substEach :: TfCondition -> TfAssignItem -> TfCondition
-    substEach cond' a@(TfAssignItem (TfVar v) e) =
+    substEach :: TfAssignItem -> TfCondition -> TfCondition
+    substEach _ TfFalse = TfFalse
+    substEach a@(TfAssignItem (TfVar v) e) cond' =
       case cond' of
         -- the variable can only appears in TfCond as a single var
         TfCond (TfVar v') op e2
           | v == v' -> TfCond e op e2
         TfCond e1 op (TfVar v')
           | v == v' -> TfCond e1 op e
-        TfNot c -> TfNot $ substEach c a
-        TfAnd c1 c2 -> TfAnd (substEach c1 a) (substEach c2 a)
-        TfOr c1 c2 -> TfOr (substEach c1 a) (substEach c2 a)
+        TfNot c -> TfNot $ substEach a c
+        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
+        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
         _ -> cond'
     -- the key in an tfAssign must be a var
-    substEach cond' _ = cond'
+    substEach _ cond' = cond'
 
 -- concatenate two TfClauses to one TfClause
 -- the check of the second clause cond is based on the first clause's assign

@@ -3,8 +3,8 @@ module Protocols.Base.Network where
 import           Control.Parallel.Strategies
 import           Data.Maybe
 import           Functions.Transfer
+import           GHC.Conc                    (numCapabilities)
 import           Protocols.Base.Router
-import GHC.Conc (numCapabilities)
 
 -- FIXME: protocol information is lost!
 newtype NetProtoTf =
@@ -19,7 +19,8 @@ instance Show NetProtoTf where
 -- TODO: specify node ordering
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
 toNetProtoTf rTfs =
-  NetProtoTf $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
+  NetProtoTf
+    $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
   where
     chunkSize = length prodTfClauses `div` numCapabilities
     prodTfClauses :: [[TfClause]]
@@ -43,3 +44,22 @@ toNetProtoTf rTfs =
             (concat2Assigns ass1 ass2)
           where
             cond2' = substCond cond2 ass1
+
+-- given a net proto tf, compute the fixed point for each tf clause
+-- the fix point is computed by substituting each cond var with the corresponding assign var
+-- and then convert assign to cond and append to the existing cond
+toFpCond :: NetProtoTf -> [TfCondition]
+toFpCond (NetProtoTf (Tf nTfCs)) =
+  mapMaybe toEachCond nTfCs `using` parList rpar
+  where
+    toEachCond :: TfClause -> Maybe TfCondition
+    toEachCond (TfClause nCond nAss) =
+      case newCond of
+        TfFalse -> Nothing
+        _       -> Just newCond
+      where
+        newCond =
+          simplifyCond $ TfAnd (substCond nCond nAss) (assignToCond nAss)
+
+showFpCond :: [TfCondition] -> String
+showFpCond fpConds = "FpCond: \n" ++ unlines (map show fpConds)

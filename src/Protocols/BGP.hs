@@ -127,7 +127,11 @@ bgpItemToClause (RmItem action matches sets) =
     Permit -> ProtoTfClause conds (Just rte)
     Deny   -> ProtoTfClause conds Nothing
   where
-    conds = foldr (TfAnd . bgpMatchToCond) TfTrue matches
+    conds = foldr concatMatch TfTrue matches
+      where
+        concatMatch :: BgpMatch -> TfCondition -> TfCondition
+        concatMatch _ TfFalse = TfFalse
+        concatMatch m c       = TfAnd (bgpMatchToCond m) c
     -- the sets is always consumed
     rte = foldl' stepSet defaultBgpRoute sets
     -- accumulate all BgpSets into a single BgpRoute
@@ -223,8 +227,14 @@ bgpMatchToCond m =
   case m of
     -- the route ip prefix belongs to the range of the ip prefix list
     -- for k prefix list items, there are 2 * k conditions to be Or'ed
-    MatchIpPrefix pl  -> foldr (TfOr . plItemToCond) TfFalse pl
-    MatchCommunity cl -> foldr (TfOr . clItemToCond) TfFalse cl
+    MatchIpPrefix pl -> foldr concatPlItem TfFalse pl
+      where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
+            concatPlItem _ TfFalse = TfFalse
+            concatPlItem pli cond  = TfOr (plItemToCond pli) cond
+    MatchCommunity cl -> foldr concatClItem TfFalse cl
+      where concatClItem :: BgpClItem -> TfCondition -> TfCondition
+            concatClItem _ TfFalse = TfFalse
+            concatClItem ci cond   = TfOr (clItemToCond ci) cond
 
 -- convert a BgpPlItem to a TfCondition
 plItemToCond :: BgpPlItem -> TfCondition
