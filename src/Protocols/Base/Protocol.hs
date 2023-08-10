@@ -10,6 +10,7 @@ import           Data.Kind                   (Type)
 import           Data.Maybe                  (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
+import           GHC.Conc                    (numCapabilities)
 
 type RouterId = Word32
 
@@ -106,8 +107,10 @@ class ProtocolTf a where
     where
       sPTf = toSsProtoTf sF
       simplePTf =
-        ProtoTf
-          (mapMaybe simpleCond ((pTfClauses . ssTf) sPTf) `using` parList rpar)
+        ProtoTf (mapMaybe simpleCond sPTfC `using` parListChunk chunkSize rpar)
+        where
+          sPTfC = pTfClauses (ssTf sPTf)
+          chunkSize = length sPTfC `div` numCapabilities
       simpleCond (ProtoTfClause cond route) =
         case cond' of
           TfFalse -> Nothing

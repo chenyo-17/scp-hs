@@ -1,6 +1,8 @@
 module Protocols.Base.Router where
 
-import           Data.Maybe              (isNothing, mapMaybe)
+import           Control.Parallel.Strategies
+import           Data.List                   (foldl')
+import           Data.Maybe                  (isNothing, mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Protocol
 
@@ -30,16 +32,17 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
     -- combine the head linkTf and each of the rest linkTfs and compute the new pTf clauses
     computeRouterTf :: Route a => [LinkProtoTf a] -> [TfClause]
     computeRouterTf [] = []
-    computeRouterTf lTfs_ = foldr concatPTfs [] lTfs_
+    computeRouterTf lTfs_ = foldl' concatPTfs [] lTfs_
+        -- the input and output tf clauses list are completely different
       where
-        concatPTfs :: Route a => LinkProtoTf a -> [TfClause] -> [TfClause]
+        concatPTfs :: Route a => [TfClause] -> LinkProtoTf a -> [TfClause]
         -- for each ltf, combine it with each of the accTf clauses
         -- e.g., lTfs = [(a1,a2), (b1, b2), (c1, c2)]
         -- step 1: accTf = [c1, c2]
         -- step 2: accTf = [b1 > c1, c1 > b1, b1 > c2, c2 > b1,...]
         -- step 3: accTf = [a1 > (b1 > c1), a1 < (b1 > c1),...]
         -- for the first lTf, just unwrap all clauses
-        concatPTfs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) [] =
+        concatPTfs [] (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) =
           map toTfClause pTfCs
               -- append dst to cond vars, and convert route to tf assign
               -- and append dst to assign val
@@ -49,22 +52,22 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
               where
                 cond = appendCondVar (show dst) pc
                 ass = appendAssignVal (show dst) (toTfAssign pr)
-        -- for every pair of accTf and pTf clauses, 
+        -- for every pair of accTf and pTf clauses,
         -- merge them and add to the new list
         -- accTfCs is always rewritten
-        -- FIXME: add concurrency!
-        concatPTfs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) accTfCs =
-          foldr mergeTfClauses [] pTfCs
+        concatPTfs accTfCs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) =
+          concatMap mergeTfClauses pTfCs `using` parList rpar
+          -- not use chunk as pTfCs is usually smaller than accTfs
+          -- and the computation for each clause is intensive
           where
-            mergeTfClauses ::
-                 Route a => ProtoTfClause a -> [TfClause] -> [TfClause]
+            mergeTfClauses :: Route a => ProtoTfClause a -> [TfClause]
             -- given a pTf clause, compare it with each of the accTf clauses
             -- and add to accTfCs
-            mergeTfClauses newPTfC accTfCs' =
-              accTfCs' ++ foldr preferClause [] accTfCs
+            mergeTfClauses newPTfC = concatMap preferClause accTfCs
               where
-                preferClause oldTfC acc' =
-                  acc' ++ mapMaybe prefer [preferOldCond, preferNewCond]
+                preferClause :: TfClause -> [TfClause]
+                preferClause oldTfC =
+                  mapMaybe prefer [preferOldCond, preferNewCond]
                   where
                     prefer cond =
                       if newCond == TfFalse
@@ -110,7 +113,7 @@ toRouterNullTf src = prodNullTfClauses . map onlyNullLTfClauses
           filter (\(ProtoTfClause _ rte) -> isNothing rte) $ pTfClauses pTf_
     -- given a list of link tfs where each link tf only has null tf clauses,
     -- product all null tf clauses
-    -- FIXME: add concurrency here, it seems it is more efficient than foldr as 
+    -- FIXME: add concurrency here, it seems it is more efficient than foldr as
     -- the list is always traversed
     prodNullTfClauses :: Route a => [ProtoTf a] -> [TfClause]
     prodNullTfClauses [] = []
