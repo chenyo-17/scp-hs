@@ -63,6 +63,7 @@ library
         Protocols.BGP
         Specifications.Spec
         Protocols.Base.Protocol
+        Functions.Solver
         Protocols.Base.Router
         Protocols.Base.Network
         Utilities.Ip
@@ -92,6 +93,7 @@ executable protocol
         base ^>=4.16.4.0, 
         scp-hs, 
         iproute ^>=1.7.10,
+        sbv ^>=10.2,
         parallel ^>=3.2.2.0,
 
     hs-source-dirs: src
@@ -99,6 +101,7 @@ executable protocol
     other-modules:
         Utilities.Ip
         Specifications.Spec
+        Functions.Solver
         Protocols.Base.Protocol
         Protocols.Base.Router
         Protocols.Base.Network

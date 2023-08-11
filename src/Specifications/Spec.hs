@@ -8,6 +8,7 @@ import           Functions.Transfer
 import           GHC.Conc
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
+import Functions.Solver
 
 -- different types of spec
 -- TODO: add reachability
@@ -40,6 +41,7 @@ data AttrSpec a = AttrSpec
   , specRight :: AttrCondExpr
   } deriving (Eq)
 
+toAttrSpec :: a -> AttrCondExpr -> TfOp -> AttrCondExpr -> AttrSpec a
 toAttrSpec = AttrSpec
 
 instance (Show a, ProtoAttr a) => Show (AttrSpec a) where
@@ -81,4 +83,4 @@ toSpecCond fps spec = mapMaybe concatFp fps `using` parListChunk chunkSize rpar
         TfFalse -> Nothing
         _       -> Just newCond
       where
-        newCond = simplifyCond $ fp `TfAnd` specCond
+        (newCond, model) = simplifyCondWithSolver $ fp `TfAnd` specCond

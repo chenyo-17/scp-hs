@@ -32,8 +32,8 @@ reverseOp op =
 data TfLiteral
   = TfInt Word32
   | TfBool Bool
-  | TfString String
-  | TfPattern String -- regular expression
+  -- | TfString String
+  -- | TfPattern String -- regular expression
   deriving (Eq)
 
 data TfCondition
@@ -331,10 +331,10 @@ instance Show TfOp where
 instance Show TfLiteral where
   show lit =
     case lit of
-      TfInt i     -> show i
-      TfBool b    -> show b
-      TfString s  -> show s
-      TfPattern p -> show p
+      TfInt i  -> show i
+      TfBool b -> show b
+      -- TfString s  -> show s
+      -- TfPattern p -> show p
 
 instance Show TfExpr where
   show expr =
