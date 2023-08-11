@@ -40,9 +40,12 @@ data AttrSpec a = AttrSpec
   , specRight :: AttrCondExpr
   } deriving (Eq)
 
+toAttrSpec = AttrSpec
+
 instance (Show a, ProtoAttr a) => Show (AttrSpec a) where
   show spec = show $ attrSpecToCond spec
 
+-- convert an attrSpec to a tf condition
 attrSpecToCond :: ProtoAttr a => AttrSpec a -> TfCondition
 attrSpecToCond (AttrSpec attr left op right) = TfCond leftExpr op rightExpr
   where

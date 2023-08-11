@@ -100,7 +100,7 @@ main = do
   let nTf = toNetProtoTf [rTf1, rTf2]
   -- print nTf
   let fpCond = toFpCond nTf
-  let specs = [RouterState (AttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.16/28"))]
+  let specs = [RouterState (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.16/28"))]
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond fpCond specs
   putStrLn $ "SpecCond: \n" ++ showConds specCond
