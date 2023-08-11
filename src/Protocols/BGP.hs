@@ -58,7 +58,8 @@ type BgpCl = BgpAttrList BgpClItem
 
 data BgpMatch
   = MatchCommunity BgpCl
-  | MatchIpPrefix BgpPl
+  | MatchIpPrefix BgpPl -- only consider exact match
+  | MatchNextHop BgpPl
   deriving (Eq)
 
 data BgpSet
@@ -66,7 +67,7 @@ data BgpSet
   | SetBgpNextHop Ip
   | SetCommunity BgpCommunity -- only consider a single community
   | SetBgpFrom RouterId
-  -- TODO: set ip prefix
+  | SetIpPrefix IpPrefix
   deriving (Eq)
 
 data RmItem = RmItem
@@ -138,10 +139,21 @@ bgpItemToClause (RmItem action matches sets) =
     stepSet :: BgpRoute -> BgpSet -> BgpRoute
     stepSet r s =
       case s of
-        SetLocalPref lp  -> r {localPref = Just lp}
-        SetBgpNextHop nh -> r {bgpNextHop = Just nh}
-        SetCommunity c   -> r {community = Just c}
-        SetBgpFrom f     -> r {bgpFrom = Just f}
+        SetLocalPref lp   -> r {localPref = Just lp}
+        SetBgpNextHop nh  -> r {bgpNextHop = Just nh}
+        SetCommunity comm -> r {community = Just comm}
+        SetBgpFrom fr     -> r {bgpFrom = Just fr}
+        SetIpPrefix ip    -> r {bgpIpPrefix = Just ip}
+
+-- given a attribute type, and a string, parse it to a TfExpr
+-- FIXME: this is a bit duplicate with bgpRouteToAssign, it is just used to parse spec
+bgpStrToAttrValExpr :: BgpAttr -> String -> TfExpr
+bgpStrToAttrValExpr LocalPref lp = (TfConst . TfInt) (read lp :: Word32)
+bgpStrToAttrValExpr BgpNextHop nh = (TfConst . TfInt . fromIpw) (read nh :: Ip)
+bgpStrToAttrValExpr Community c = (TfConst . TfInt) (read c :: Word32)
+bgpStrToAttrValExpr BgpIpPrefix ip =
+  (TfConst . TfInt . fst . toIpRangew) (read ip :: IpPrefix)
+bgpStrToAttrValExpr BgpFrom fr = (TfConst . TfInt) (read fr :: Word32)
 
 -- convert a BgpRoute to a TfAssign
 -- all attributes must be covered,
@@ -170,10 +182,15 @@ bgpRouteToAssign (Just rte) =
   where
     -- FIXME: this is ugly
     fromIpPrefix :: TfAssign -> TfAssign
-    -- assume ip prefix is never reset
-    fromIpPrefix = addTfAssignItem ipPrefixVar ipPrefixVar
+    fromIpPrefix =
+      case bgpIpPrefix rte of
+        Nothing -> addTfAssignItem ipPrefixVar ipPrefixVar
+        Just ip
+          -- an ip prefix set is to a single value
+         ->
+          addTfAssignItem ipPrefixVar (TfConst (TfInt ((fst . toIpRangew) ip)))
       where
-        ipPrefixVar = bgpAttrToExpr BgpIpPrefix
+        ipPrefixVar = attrToTfExpr BgpIpPrefix
     fromBgpCommunity :: TfAssign -> TfAssign
     fromBgpCommunity ass =
       case community rte of
@@ -230,19 +247,32 @@ bgpMatchToCond m =
     MatchIpPrefix pl -> foldr concatPlItem TfFalse pl
       where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
             concatPlItem _ TfTrue = TfTrue
-            concatPlItem pli cond = TfOr (plItemToCond pli) cond
+            concatPlItem pli cond = TfOr (ipPlItemToCond pli) cond
+    MatchNextHop pl -> foldr concatPlItem TfFalse pl
+      where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
+            concatPlItem _ TfTrue = TfTrue
+            concatPlItem pli cond = TfOr (nhPlItemToCond pli) cond
     MatchCommunity cl -> foldr concatClItem TfFalse cl
       where concatClItem :: BgpClItem -> TfCondition -> TfCondition
             concatClItem _ TfTrue = TfTrue
             concatClItem ci cond  = TfOr (clItemToCond ci) cond
 
 -- convert a BgpPlItem to a TfCondition
-plItemToCond :: BgpPlItem -> TfCondition
-plItemToCond pli = TfAnd geIpLow leIpHiw
+-- for next hop, the condition is a range,
+nhPlItemToCond :: BgpPlItem -> TfCondition
+nhPlItemToCond pli = TfAnd geIpLow leIpHiw
   where
     (ipLow, ipHiw) = toIpRangew pli
     geIpLow = TfCond (bgpAttrToExpr BgpIpPrefix) TfGe (TfConst (TfInt ipLow))
     leIpHiw = TfCond (bgpAttrToExpr BgpIpPrefix) TfLe (TfConst (TfInt ipHiw))
+
+-- for ip prefix, the condition is a single value (ipLow), as now only consider exact match
+-- so that the set ip prefix can be converted to a single equality condition
+ipPlItemToCond :: BgpPlItem -> TfCondition
+ipPlItemToCond pli =
+  TfCond (bgpAttrToExpr BgpIpPrefix) TfEq (TfConst (TfInt ipLow))
+  where
+    (ipLow, _) = toIpRangew pli
 
 -- convert a BgpClItem to a TfCondition
 -- each item only contains a single community
@@ -295,7 +325,8 @@ preferFstBgpCond _ ass1 ass2
     getFrom = fromJust . getAssignVal (bgpAttrToExpr BgpFrom)
 
 instance ProtoAttr BgpAttr where
-  toTfExpr = bgpAttrToExpr
+  attrToTfExpr = bgpAttrToExpr
+  strToAttrValExpr = bgpStrToAttrValExpr
 
 instance ProtocolTf BgpRm where
   type RouteType BgpRm = BgpRoute
@@ -318,12 +349,14 @@ instance Route BgpRoute where
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl
   show (MatchIpPrefix pl)  = "match ip-prefix " ++ show pl
+  show (MatchNextHop nh)   = "match next-hop " ++ show nh
 
 instance Show BgpSet where
   show (SetLocalPref lp)  = "set local-pref " ++ show lp
   show (SetBgpNextHop nh) = "set next-hop " ++ show nh
   show (SetCommunity c)   = "set community " ++ show c
   show (SetBgpFrom f)     = "set from " ++ show f
+  show (SetIpPrefix ip)   = "set ip-prefix " ++ show ip
 
 instance Show RmItem where
   show (RmItem action match set) =

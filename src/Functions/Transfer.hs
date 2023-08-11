@@ -1,6 +1,6 @@
 module Functions.Transfer where
 
-import           Data.List (foldl', intercalate)
+import           Data.List (intercalate)
 import           Data.Word
 
 data TfExpr

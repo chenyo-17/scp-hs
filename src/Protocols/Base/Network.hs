@@ -45,6 +45,8 @@ toNetProtoTf rTfs =
           where
             cond2' = substCond cond2 ass1
 
+type FixedPoints = [TfCondition]
+
 -- given a net proto tf, compute the fixed point for each tf clause
 -- the fix point is computed by substituting each cond var with the corresponding assign var
 -- and then convert assign to cond and append to the existing cond
@@ -61,5 +63,5 @@ toFpCond (NetProtoTf (Tf nTfCs)) =
         newCond =
           simplifyCond $ TfAnd (substCond nCond nAss) (assignToCond nAss)
 
-showFpCond :: [TfCondition] -> String
-showFpCond fpConds = "FpCond: \n" ++ unlines (map show fpConds)
+showConds :: [TfCondition] -> String
+showConds fpConds = unlines (map show fpConds)

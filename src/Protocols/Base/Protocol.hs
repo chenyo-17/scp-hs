@@ -79,7 +79,9 @@ data LinkProtoTf a = LinkProtoTf
 instance (Show a) => Show (LinkProtoTf a) where
   show (LinkProtoTf lk tf) = "linkTf " ++ show lk ++ ":\n" ++ show tf
 
-class Route a where
+class Show a =>
+      Route a
+  where
   -- return the condition when the first route is preferred than the second route
   -- the first argument is just use to locate the instance
   preferFstCond :: Maybe a -> TfAssign -> TfAssign -> TfCondition
@@ -89,11 +91,18 @@ class Route a where
   -- update first route's attributes with second route's attributes
   updateRoute :: a -> a -> a
 
-class ProtoAttr a where
+class Show a =>
+      ProtoAttr a
+  where
   -- convert each attribute to a tf expression
-  toTfExpr :: a -> TfExpr
+  attrToTfExpr :: a -> TfExpr
+  -- given a string, and its attribute type, convert it a TfConst
+  -- this restricts that any route attr assign should be converted to a single cond
+  strToAttrValExpr :: a -> String -> TfExpr
 
-class ProtocolTf a where
+class Show a =>
+      ProtocolTf a
+  where
   -- declare the relationship between a protocol and its route type
   type RouteType a :: Type
   -- given a session function, convert to a session proto tf

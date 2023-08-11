@@ -7,6 +7,7 @@ import           Protocols.BGP
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
 import           Protocols.Base.Router
+import           Specifications.Spec
 import           Utilities.Ip
 
 main :: IO ()
@@ -97,6 +98,11 @@ main = do
   print rTf2
   -- print network tfs
   let nTf = toNetProtoTf [rTf1, rTf2]
-  print nTf
+  -- print nTf
   let fpCond = toFpCond nTf
-  putStrLn $ showFpCond fpCond
+  let specs = [RouterState (AttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.16/28"))]
+  putStrLn $ "Spec: \n" ++ show specs
+  let specCond = toSpecCond fpCond specs
+  putStrLn $ "SpecCond: \n" ++ showConds specCond
+
+  -- putStrLn $ "FpCond:\n" ++ showConds fpCond

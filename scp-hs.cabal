@@ -61,6 +61,7 @@ library
     -- Modules exported by the library.
     exposed-modules:  
         Protocols.BGP
+        Specifications.Spec
         Protocols.Base.Protocol
         Protocols.Base.Router
         Protocols.Base.Network
@@ -97,6 +98,7 @@ executable protocol
     default-language: Haskell2010
     other-modules:
         Utilities.Ip
+        Specifications.Spec
         Protocols.Base.Protocol
         Protocols.Base.Router
         Protocols.Base.Network
