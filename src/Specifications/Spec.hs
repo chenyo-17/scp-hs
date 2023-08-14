@@ -37,11 +37,11 @@ instance Show AttrCondExpr where
 data AttrSpec a = AttrSpec
   { attrType  :: a
   , specLeft  :: AttrCondExpr
-  , specOp    :: TfOp
+  , specOp    :: TfOpA
   , specRight :: AttrCondExpr
   } deriving (Eq)
 
-toAttrSpec :: a -> AttrCondExpr -> TfOp -> AttrCondExpr -> AttrSpec a
+toAttrSpec :: a -> AttrCondExpr -> TfOpA -> AttrCondExpr -> AttrSpec a
 toAttrSpec = AttrSpec
 
 instance (Show a, ProtoAttr a) => Show (AttrSpec a) where

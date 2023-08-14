@@ -1,4 +1,6 @@
-module Functions.Solver where
+module Functions.Solver
+  ( simplifyCondWithSolver
+  ) where
 
 import qualified Data.Map           as Map
 import           Data.SBV
@@ -27,8 +29,12 @@ toSBVExpr dict (TfVar s) =
       let newDict = Map.insert s newVar dict
       return (newDict, EInt newVar)
 toSBVExpr dict (TfConst lit) = return (dict, toSBVLiteral lit)
+toSBVExpr dict (TfAdd e1 e2) = do
+  (newDict, EInt se1) <- toSBVExpr dict e1
+  (newDict', EInt se2) <- toSBVExpr newDict e2
+  return (newDict', EInt $ se1 + se2)
 
-applyOp :: TfOp -> SExpr -> SExpr -> SBool
+applyOp :: TfOpA -> SExpr -> SExpr -> SBool
 applyOp op (EInt e1) (EInt e2) =
   case op of
     TfGe -> e1 .>= e2

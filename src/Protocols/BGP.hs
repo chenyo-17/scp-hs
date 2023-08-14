@@ -58,8 +58,8 @@ type BgpCl = BgpAttrList BgpClItem
 
 data BgpMatch
   = MatchCommunity BgpCl
-  | MatchIpPrefix BgpPl -- only consider exact match
-  | MatchNextHop BgpPl
+  | MatchBgpIpPrefix BgpPl -- only consider exact match
+  | MatchBgpNextHop BgpPl
   deriving (Eq)
 
 data BgpSet
@@ -244,11 +244,11 @@ bgpMatchToCond m =
   case m of
     -- the route ip prefix belongs to the range of the ip prefix list
     -- for k prefix list items, there are 2 * k conditions to be Or'ed
-    MatchIpPrefix pl -> foldr concatPlItem TfFalse pl
+    MatchBgpIpPrefix pl -> foldr concatPlItem TfFalse pl
       where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
             concatPlItem _ TfTrue = TfTrue
             concatPlItem pli cond = TfOr (ipPlItemToCond pli) cond
-    MatchNextHop pl -> foldr concatPlItem TfFalse pl
+    MatchBgpNextHop pl -> foldr concatPlItem TfFalse pl
       where concatPlItem :: BgpPlItem -> TfCondition -> TfCondition
             concatPlItem _ TfTrue = TfTrue
             concatPlItem pli cond = TfOr (nhPlItemToCond pli) cond
@@ -348,8 +348,8 @@ instance Route BgpRoute where
 
 instance Show BgpMatch where
   show (MatchCommunity cl) = "match community " ++ show cl
-  show (MatchIpPrefix pl)  = "match ip-prefix " ++ show pl
-  show (MatchNextHop nh)   = "match next-hop " ++ show nh
+  show (MatchBgpIpPrefix pl)  = "match ip-prefix " ++ show pl
+  show (MatchBgpNextHop nh)   = "match next-hop " ++ show nh
 
 instance Show BgpSet where
   show (SetLocalPref lp)  = "set local-pref " ++ show lp

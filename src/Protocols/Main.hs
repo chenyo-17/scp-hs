@@ -25,29 +25,29 @@ main = do
   let cl1 = [2001]
   let cl2 = [1001]
   -- (1, 2)
-  let rmItem1 = toRmItem Permit [MatchIpPrefix pl1] [SetCommunity 1001]
+  let rmItem1 = toRmItem Permit [MatchBgpIpPrefix pl1] [SetCommunity 1001]
   let rmItem2 = toRmItem Permit [MatchCommunity cl1] [SetLocalPref 200]
   let rm1Export2 = toBgpRm [rmItem1, rmItem2]
   let rmItem7 = toRmItem Permit [MatchCommunity cl2] [SetLocalPref 100]
   let rmItem8 = toRmItem Permit [] [SetBgpNextHop ip6]
   let rm2Import1 = toBgpRm [rmItem7, rmItem8]
   -- (2, 1)
-  let rmItem5 = toRmItem Permit [MatchIpPrefix pl2] [SetCommunity 2001]
+  let rmItem5 = toRmItem Permit [MatchBgpIpPrefix pl2] [SetCommunity 2001]
   let rmItem6 = toRmItem Permit [MatchCommunity cl2] [SetLocalPref 200]
   let rm2Export1 = toBgpRm [rmItem5, rmItem6]
   let rmItem3 = toRmItem Permit [MatchCommunity cl1] [SetLocalPref 100]
   let rmItem4 = toRmItem Permit [] [SetBgpNextHop ip3]
   let rm1Import2 = toBgpRm [rmItem3, rmItem4]
   -- (3, 1)
-  let rmItem9 = toRmItem Deny [MatchIpPrefix [ip1]] []
-  let rmItem10 = toRmItem Permit [MatchIpPrefix [ip2]] [SetLocalPref 250]
+  let rmItem9 = toRmItem Deny [MatchBgpIpPrefix [ip1]] []
+  let rmItem10 = toRmItem Permit [MatchBgpIpPrefix [ip2]] [SetLocalPref 250]
   let rm3Export1 = toBgpRm [rmItem9, rmItem10]
   -- TODO: any deny and permit needs to be declared explicitly
   let rmItem11 = toRmItem Permit [] []
   let rm1Import3 = toBgpRm [rmItem11]
   -- (3, 2)
-  let rmItem12 = toRmItem Deny [MatchIpPrefix [ip4]] []
-  let rmItem13 = toRmItem Permit [MatchIpPrefix [ip5]] [SetLocalPref 50]
+  let rmItem12 = toRmItem Deny [MatchBgpIpPrefix [ip4]] []
+  let rmItem13 = toRmItem Permit [MatchBgpIpPrefix [ip5]] [SetLocalPref 50]
   let rm3Export2 = toBgpRm [rmItem12, rmItem13]
   let rmItem14 = toRmItem Permit [] []
   let rm2Import3 = toBgpRm [rmItem14]
@@ -108,3 +108,11 @@ main = do
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond fpCond specs
   putStrLn $ "SpecCond: \n" ++ showConds specCond
+  -- let test =
+  --       TfAnd
+  --         (TfCond
+  --            (TfAdd (TfConst (TfInt 12)) (TfAdd (TfVar "x") (TfVar "y")))
+  --            TfEq
+  --            (TfConst (TfInt 19)))
+  --         (TfCond (TfVar "y") TfEq (TfVar "x"))
+  -- print $ simplifyCondWithSolver test

@@ -6,9 +6,11 @@ import           Data.Word
 data TfExpr
   = TfVar String
   | TfConst TfLiteral
+  | TfAdd TfExpr TfExpr
   deriving (Eq)
 
-data TfOp
+-- logical operators
+data TfOpA
   = TfGe
   | TfLe
   | TfGt
@@ -18,8 +20,8 @@ data TfOp
   deriving (Eq)
 
 -- reverse the operator
-reverseOp :: TfOp -> TfOp
-reverseOp op =
+reverseOpA :: TfOpA -> TfOpA
+reverseOpA op =
   case op of
     TfGe -> TfLt
     TfLe -> TfGt
@@ -37,7 +39,7 @@ data TfLiteral
   deriving (Eq)
 
 data TfCondition
-  = TfCond TfExpr TfOp TfExpr
+  = TfCond TfExpr TfOpA TfExpr
   | TfTrue
   | TfFalse
   | TfNot TfCondition
@@ -141,7 +143,7 @@ simplifyCond cond =
     TfNot TfTrue -> TfFalse
     TfNot TfFalse -> TfTrue
     TfNot (TfNot c1) -> simplifyCond c1
-    TfNot (TfCond e1 op e2) -> simplifyCond $ TfCond e1 (reverseOp op) e2
+    TfNot (TfCond e1 op e2) -> simplifyCond $ TfCond e1 (reverseOpA op) e2
     -- TfNot (TfAnd c1 c2) ->
     --   TfOr (simplifyCond $ TfNot c1) (simplifyCond $ TfNot c2)
     TfNot (TfAnd c1 c2) ->
@@ -221,6 +223,14 @@ simplifyCond cond =
         TfLe -> TfFalse
         TfGt -> TfTrue
         TfLt -> TfFalse
+    TfCond (TfAdd (TfConst (TfInt i1)) (TfConst (TfInt i2))) op e2 ->
+      case op of
+        TfEq -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfEq e2
+        TfNe -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfNe e2
+        TfGe -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfGe e2
+        TfLe -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfLe e2
+        TfGt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfGt e2
+        TfLt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfLt e2
     _ -> cond
 
 -- substitute the variable in the condition with the assign
@@ -315,10 +325,11 @@ appendAssignVar str (TfAssign as) =
 appendExprVar :: String -> TfExpr -> TfExpr
 appendExprVar str expr =
   case expr of
-    TfVar v -> TfVar $ v ++ str
-    _       -> expr
+    TfVar v     -> TfVar $ v ++ str
+    TfAdd e1 e2 -> TfAdd (appendExprVar str e1) (appendExprVar str e2)
+    _           -> expr
 
-instance Show TfOp where
+instance Show TfOpA where
   show op =
     case op of
       TfGe -> " >= "
@@ -342,6 +353,7 @@ instance Show TfExpr where
     case expr of
       TfVar v     -> v
       TfConst lit -> show lit
+      TfAdd e1 e2 -> "(" ++ show e1 ++ " + " ++ show e2 ++ ")"
 
 instance Show TfCondition where
   show cond =
