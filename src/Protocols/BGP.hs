@@ -167,11 +167,11 @@ bgpRouteToAssign Nothing = toNullBgpAssign
       TfAssign
         [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
       where
-        nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) TfNull
-        nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) TfNull
-        nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) TfNull
-        nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) TfNull
-        nullCommunity = TfAssignItem (bgpAttrToExpr Community) TfNull
+        nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) (TfConst TfNull)
+        nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) (TfConst TfNull)
+        nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) (TfConst TfNull)
+        nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) (TfConst TfNull)
+        nullCommunity = TfAssignItem (bgpAttrToExpr Community) (TfConst TfNull)
 bgpRouteToAssign (Just rte) =
   (fromBgpFrom
      . fromLocalPref

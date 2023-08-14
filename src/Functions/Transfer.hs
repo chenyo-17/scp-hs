@@ -6,7 +6,6 @@ import           Data.Word
 data TfExpr
   = TfVar String
   | TfConst TfLiteral
-  | TfNull
   deriving (Eq)
 
 data TfOp
@@ -32,6 +31,7 @@ reverseOp op =
 data TfLiteral
   = TfInt Word32
   | TfBool Bool
+  | TfNull
   -- | TfString String
   -- | TfPattern String -- regular expression
   deriving (Eq)
@@ -60,7 +60,7 @@ data TfAssign
 isNullAssign :: TfAssign -> Bool
 isNullAssign assign =
   case assign of
-    TfAssign items -> all (\item -> assignValue item == TfNull) items
+    TfAssign items -> all (\item -> assignValue item == TfConst TfNull) items
     TfAssignNull   -> True
 
 -- lookup an assign value by a variable
@@ -205,7 +205,7 @@ simplifyCond cond =
           TfLe -> TfTrue
           TfGt -> TfFalse
           TfLt -> TfFalse
-    TfCond TfNull op _ ->
+    TfCond (TfConst TfNull) op _ ->
       case op of
         TfEq -> TfFalse
         TfNe -> TfTrue
@@ -213,7 +213,7 @@ simplifyCond cond =
         TfLe -> TfTrue
         TfGt -> TfFalse
         TfLt -> TfTrue
-    TfCond _ op TfNull ->
+    TfCond _ op (TfConst TfNull) ->
       case op of
         TfEq -> TfFalse
         TfNe -> TfTrue
@@ -333,6 +333,7 @@ instance Show TfLiteral where
     case lit of
       TfInt i  -> show i
       TfBool b -> show b
+      TfNull   -> "null"
       -- TfString s  -> show s
       -- TfPattern p -> show p
 
@@ -341,7 +342,6 @@ instance Show TfExpr where
     case expr of
       TfVar v     -> v
       TfConst lit -> show lit
-      TfNull      -> "null"
 
 instance Show TfCondition where
   show cond =

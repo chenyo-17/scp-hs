@@ -2,6 +2,7 @@ module Main
   ( main
   ) where
 
+import           Functions.Solver        (simplifyCondWithSolver)
 import           Functions.Transfer
 import           Protocols.BGP
 import           Protocols.Base.Network
@@ -102,9 +103,8 @@ main = do
   let fpCond = toFpCond nTf
   let specs =
         [ RouterState
-            (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.16/28"))
+            (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.64/28"))
         ]
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond fpCond specs
   putStrLn $ "SpecCond: \n" ++ showConds specCond
-  -- putStrLn $ "FpCond:\n" ++ showConds fpCond

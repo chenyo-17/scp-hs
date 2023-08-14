@@ -4,11 +4,11 @@ module Specifications.Spec where
 
 import           Control.Parallel.Strategies
 import           Data.Maybe                  (mapMaybe)
+import           Functions.Solver
 import           Functions.Transfer
 import           GHC.Conc
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
-import Functions.Solver
 
 -- different types of spec
 -- TODO: add reachability
@@ -83,4 +83,4 @@ toSpecCond fps spec = mapMaybe concatFp fps `using` parListChunk chunkSize rpar
         TfFalse -> Nothing
         _       -> Just newCond
       where
-        (newCond, model) = simplifyCondWithSolver $ fp `TfAnd` specCond
+        newCond = simplifyCondWithSolver $ fp `TfAnd` specCond
