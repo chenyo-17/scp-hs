@@ -95,7 +95,9 @@ class Show a =>
       ProtoAttr a
   where
   -- convert each attribute to a tf expression
+  attrToString :: a -> String
   attrToTfExpr :: a -> TfExpr
+  attrToTfExpr = TfVar . attrToString
   -- given a string, and its attribute type, convert it a TfConst
   -- this restricts that any route attr assign should be converted to a single cond
   strToAttrValExpr :: a -> String -> TfExpr

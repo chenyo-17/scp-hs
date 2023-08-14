@@ -84,14 +84,14 @@ newtype BgpRm =
   deriving (Eq)
 
 -- convert a BgpAttr to a TfExpr
-bgpAttrToExpr :: BgpAttr -> TfExpr
-bgpAttrToExpr attr =
+bgpAttrToString :: BgpAttr -> String
+bgpAttrToString attr =
   case attr of
-    LocalPref   -> TfVar "LocalPref"
-    BgpNextHop  -> TfVar "BgpNextHop"
-    Community   -> TfVar "Community"
-    BgpIpPrefix -> TfVar "BgpIpPrefix"
-    BgpFrom     -> TfVar "BgpFrom"
+    LocalPref   -> "LocalPref"
+    BgpNextHop  -> "BgpNextHop"
+    Community   -> "Community"
+    BgpIpPrefix -> "BgpIpPrefix"
+    BgpFrom     -> "BgpFrom"
 
 -- user constructor API for RmItem
 toRmItem :: Action -> [BgpMatch] -> [BgpSet] -> RmItem
@@ -167,11 +167,11 @@ bgpRouteToAssign Nothing = toNullBgpAssign
       TfAssign
         [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
       where
-        nullLocalPref = TfAssignItem (bgpAttrToExpr LocalPref) (TfConst TfNull)
-        nullIpPrefix = TfAssignItem (bgpAttrToExpr BgpIpPrefix) (TfConst TfNull)
-        nullFrom = TfAssignItem (bgpAttrToExpr BgpFrom) (TfConst TfNull)
-        nullNextHop = TfAssignItem (bgpAttrToExpr BgpNextHop) (TfConst TfNull)
-        nullCommunity = TfAssignItem (bgpAttrToExpr Community) (TfConst TfNull)
+        nullLocalPref = TfAssignItem (attrToTfExpr LocalPref) (TfConst TfNull)
+        nullIpPrefix = TfAssignItem (attrToTfExpr BgpIpPrefix) (TfConst TfNull)
+        nullFrom = TfAssignItem (attrToTfExpr BgpFrom) (TfConst TfNull)
+        nullNextHop = TfAssignItem (attrToTfExpr BgpNextHop) (TfConst TfNull)
+        nullCommunity = TfAssignItem (attrToTfExpr Community) (TfConst TfNull)
 bgpRouteToAssign (Just rte) =
   (fromBgpFrom
      . fromLocalPref
@@ -198,28 +198,28 @@ bgpRouteToAssign (Just rte) =
           -- keep old value
         Just comm -> addTfAssignItem communityVar (TfConst (TfInt comm)) ass
       where
-        communityVar = bgpAttrToExpr Community
+        communityVar = attrToTfExpr Community
     fromBgpNextHop :: TfAssign -> TfAssign
     fromBgpNextHop ass =
       case bgpNextHop rte of
         Nothing -> addTfAssignItem nextHopVar nextHopVar ass
         Just nh -> addTfAssignItem nextHopVar (TfConst (TfInt (fromIpw nh))) ass
       where
-        nextHopVar = bgpAttrToExpr BgpNextHop
+        nextHopVar = attrToTfExpr BgpNextHop
     fromLocalPref :: TfAssign -> TfAssign
     fromLocalPref ass =
       case localPref rte of
         Nothing -> addTfAssignItem localPrefVar localPrefVar ass
         Just lp -> addTfAssignItem localPrefVar (TfConst (TfInt lp)) ass
       where
-        localPrefVar = bgpAttrToExpr LocalPref
+        localPrefVar = attrToTfExpr LocalPref
     fromBgpFrom :: TfAssign -> TfAssign
     fromBgpFrom ass =
       case bgpFrom rte of
         Nothing -> addTfAssignItem bgpFromVar bgpFromVar ass
         Just fr -> addTfAssignItem bgpFromVar (TfConst (TfInt fr)) ass
       where
-        bgpFromVar = bgpAttrToExpr BgpFrom
+        bgpFromVar = attrToTfExpr BgpFrom
 
 -- update first route's attributes with the second route
 -- if they update the same attribute
@@ -263,21 +263,21 @@ nhPlItemToCond :: BgpPlItem -> TfCondition
 nhPlItemToCond pli = TfAnd geIpLow leIpHiw
   where
     (ipLow, ipHiw) = toIpRangew pli
-    geIpLow = TfCond (bgpAttrToExpr BgpIpPrefix) TfGe (TfConst (TfInt ipLow))
-    leIpHiw = TfCond (bgpAttrToExpr BgpIpPrefix) TfLe (TfConst (TfInt ipHiw))
+    geIpLow = TfCond (attrToTfExpr BgpIpPrefix) TfGe (TfConst (TfInt ipLow))
+    leIpHiw = TfCond (attrToTfExpr BgpIpPrefix) TfLe (TfConst (TfInt ipHiw))
 
 -- for ip prefix, the condition is a single value (ipLow), as now only consider exact match
 -- so that the set ip prefix can be converted to a single equality condition
 ipPlItemToCond :: BgpPlItem -> TfCondition
 ipPlItemToCond pli =
-  TfCond (bgpAttrToExpr BgpIpPrefix) TfEq (TfConst (TfInt ipLow))
+  TfCond (attrToTfExpr BgpIpPrefix) TfEq (TfConst (TfInt ipLow))
   where
     (ipLow, _) = toIpRangew pli
 
 -- convert a BgpClItem to a TfCondition
 -- each item only contains a single community
 clItemToCond :: BgpClItem -> TfCondition
-clItemToCond ci = TfCond (bgpAttrToExpr Community) TfEq (TfConst (TfInt ci))
+clItemToCond ci = TfCond (attrToTfExpr Community) TfEq (TfConst (TfInt ci))
 
 -- add a setBgpFrom in each item of a rm if it is an import session
 setBgpFrom :: RouterId -> BgpRm -> BgpRm
@@ -316,16 +316,16 @@ preferFstBgpCond _ ass1 ass2
     smallerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
     getIpPrefix :: TfAssign -> TfExpr
       -- null case is already handled, here it must be just
-    getIpPrefix = fromJust . getAssignVal (bgpAttrToExpr BgpIpPrefix)
+    getIpPrefix = fromJust . getAssignVal (attrToTfExpr BgpIpPrefix)
     getLocalPref1 :: TfExpr
-    getLocalPref1 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass1
+    getLocalPref1 = fromJust $ getAssignVal (attrToTfExpr LocalPref) ass1
     getLocalPref2 :: TfExpr
-    getLocalPref2 = fromJust $ getAssignVal (bgpAttrToExpr LocalPref) ass2
+    getLocalPref2 = fromJust $ getAssignVal (attrToTfExpr LocalPref) ass2
     getFrom :: TfAssign -> TfExpr
-    getFrom = fromJust . getAssignVal (bgpAttrToExpr BgpFrom)
+    getFrom = fromJust . getAssignVal (attrToTfExpr BgpFrom)
 
 instance ProtoAttr BgpAttr where
-  attrToTfExpr = bgpAttrToExpr
+  attrToString = bgpAttrToString
   strToAttrValExpr = bgpStrToAttrValExpr
 
 instance ProtocolTf BgpRm where
@@ -347,9 +347,9 @@ instance Route BgpRoute where
   updateRoute = updateBgpRoute
 
 instance Show BgpMatch where
-  show (MatchCommunity cl) = "match community " ++ show cl
-  show (MatchBgpIpPrefix pl)  = "match ip-prefix " ++ show pl
-  show (MatchBgpNextHop nh)   = "match next-hop " ++ show nh
+  show (MatchCommunity cl)   = "match community " ++ show cl
+  show (MatchBgpIpPrefix pl) = "match ip-prefix " ++ show pl
+  show (MatchBgpNextHop nh)  = "match next-hop " ++ show nh
 
 instance Show BgpSet where
   show (SetLocalPref lp)  = "set local-pref " ++ show lp
