@@ -11,8 +11,8 @@ import           Protocols.Base.Router
 import           Specifications.Spec
 import           Utilities.Ip
 
-main :: IO ()
-main = do
+mainBgp :: IO ()
+mainBgp = do
   putStrLn ""
   let ip1 = read "0.0.0.16/28" :: IpPrefix
   let ip2 = read "0.0.0.32/28" :: IpPrefix
@@ -108,6 +108,10 @@ main = do
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond fpCond specs
   putStrLn $ "SpecCond: \n" ++ showConds specCond
+
+main :: IO ()
+main = do
+  mainBgp
   -- let test =
   --       TfAnd
   --         (TfCond

@@ -68,6 +68,7 @@ library
         Protocols.Base.Network
         Utilities.Ip
         Functions.Transfer
+        Protocols.Simple
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -108,6 +109,7 @@ executable protocol
         Protocols.Base.Router
         Protocols.Base.Network
         Protocols.BGP
+        Protocols.Simple
         Functions.Transfer
 
 -- test-suite scp-hs-test

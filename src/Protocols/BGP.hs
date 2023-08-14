@@ -301,7 +301,8 @@ preferFstBgpCond _ ass1 ass2
   -- if the second assign is null route, the first not null assign is always preferred
   | isNullAssign ass2 = TfTrue
   -- if two routes have different ip prefix, always prefer first
-  -- TODO: consider one ip is a subset of the other
+  -- here is to add default protocol rules or conditions that require node id
+  -- e.g., no send back
   | otherwise =
     TfOr
       (TfNot sameIpPrefix)
@@ -342,6 +343,8 @@ instance ProtocolTf BgpRm where
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
 instance Route BgpRoute where
+  -- FIXME: some methods are required only because cannot know the attribute
+  -- during the runtime
   preferFstCond = preferFstBgpCond
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
