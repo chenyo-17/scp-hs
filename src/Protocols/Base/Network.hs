@@ -1,68 +1,35 @@
 module Protocols.Base.Network where
 
 import           Control.Parallel.Strategies
-import           Data.Maybe
 import           Functions.Transfer
 import           Protocols.Base.Router
 import           Utilities.Parallel          (chunkSize)
 
--- FIXME: protocol information is lost!
-newtype NetProtoTf =
-  NetProtoTf Tf
-  deriving (Eq)
-
-instance Show NetProtoTf where
-  show (NetProtoTf tf) = "netTf:\n" ++ show tf
-
--- given a list of router proto tfs of the same protocol,
--- convert them to a net proto tf
--- TODO: specify node ordering
-toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
--- compute length will make lazy evaluation fail!
--- TODO: figure out which parallel strategy is better
-toNetProtoTf rTfs =
-  NetProtoTf
-    $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
+-- given a list of router proto tfs,
+-- product each tf clause and merge conditions and assigns separately
+-- then substitute conditions with assigns with best effort,
+-- and convert assign to cond, e.g., a := b -> a == b
+-- this is required because not all assigns are used in conditions
+-- FIXME: this does not guarantee complete substitution,
+-- e.g., if assign = [b := 10, a := b], then a < 5, will only be converted to b < 5
+-- as b := 10 is already visited
+toNetFpCond :: [RouterProtoTf] -> [TfCondition]
+-- filter out false conditions
+toNetFpCond rTfs =
+  filter noFalse (map mergeRTfs prodTfClauses)
+    `using` parListChunk chunkSize rpar
   where
     prodTfClauses :: [[TfClause]]
     prodTfClauses = mapM (tfClauses . rTf) rTfs
-    -- given a list of tf clauses, merge them to a net tf clause
-    mergeRTfs :: [TfClause] -> Maybe TfClause
-    -- not add false conditions
+    -- given a list of tf clauses, merge them to a tf condition
+    mergeRTfs :: [TfClause] -> TfCondition
     mergeRTfs tfCs =
-      case tfCond newClause of
-        TfFalse -> Nothing
-        _       -> Just newClause
-      where
-        newClause = foldr concatClauses (TfClause TfTrue TfAssignNull) tfCs
-        -- for each new clause, first substitute last assign
-        -- then simplify
-        concatClauses :: TfClause -> TfClause -> TfClause
-        concatClauses acc@(TfClause TfFalse _) _ = acc
-        concatClauses (TfClause cond1 ass1) (TfClause cond2 ass2) =
-          TfClause
-            (simplifyCond $ TfAnd cond1 cond2')
-            (concat2Assigns ass1 ass2)
-          where
-            cond2' = substCond cond2 ass1
+      clauseToTfCond (foldr concatTfClauses (TfClause TfTrue TfAssignNull) tfCs)
+    noFalse :: TfCondition -> Bool
+    noFalse TfFalse = False
+    noFalse _       = True
 
 type FixedPoints = [TfCondition]
-
--- given a net proto tf, compute the fixed point for each tf clause
--- the fix point is computed by substituting each cond var with the corresponding assign var
--- and then convert assign to cond and append to the existing cond
-toFpCond :: NetProtoTf -> [TfCondition]
-toFpCond (NetProtoTf (Tf nTfCs)) =
-  mapMaybe toEachCond nTfCs `using` parList rpar
-  where
-    toEachCond :: TfClause -> Maybe TfCondition
-    toEachCond (TfClause nCond nAss) =
-      case newCond of
-        TfFalse -> Nothing
-        _       -> Just newCond
-      where
-        newCond =
-          simplifyCond $ TfAnd (substCond nCond nAss) (assignToCond nAss)
 
 showConds :: [TfCondition] -> String
 showConds fpConds = unlines (map show fpConds)

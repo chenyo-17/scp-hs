@@ -100,9 +100,8 @@ mainSimple = do
   print rTf0
   print rTf1
   print rTf2
-  let nTf = toNetProtoTf [rTf0, rTf1, rTf2]
-  print nTf
-  let fpCond = toFpCond nTf
+  let fpCond = toNetFpCond [rTf0, rTf1, rTf2]
+  putStrLn $ "net fp cond:\n" ++ showConds fpCond
   let specs =
         [RouterState (toAttrSpec SimpleWeight (Router 1) TfEq (Const "50"))]
   putStrLn $ "Spec: \n" ++ show specs
@@ -196,9 +195,8 @@ mainBgp = do
   print rTf1
   print rTf2
   -- print network tfs
-  let nTf = toNetProtoTf [rTf1, rTf2]
-  -- print nTf
-  let fpCond = toFpCond nTf
+  let fpCond = toNetFpCond [rTf1, rTf2]
+  putStrLn $ "net fp cond:\n" ++ showConds fpCond
   let specs =
         [ RouterState
             (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.64/28"))

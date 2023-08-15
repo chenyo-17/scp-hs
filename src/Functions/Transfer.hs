@@ -260,23 +260,22 @@ substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
     -- the key in an tfAssign must be a var
     substEach _ cond' = cond'
 
--- concatenate two TfClauses to one TfClause
--- the check of the second clause cond is based on the first clause's assign
--- e.g.1, c1 = a > 10 -> a := 5
---        c2 =  a < 6 -> b := 3
---    returns c3 = a > 10 -> a := 5, b := 3
--- e.g.2, c1 = a > 10 -> b := 10
---        c2 = a < 6 -> a := 5
---    returns c3 = a > 10 -> b := 10, a := 5
--- the second assign overrides the first one if there assign the same variable
-concatTfClauses :: (TfClause, TfClause) -> Maybe TfClause
-concatTfClauses (TfClause c1 a1, TfClause c2 a2) =
-  if c' == TfFalse
-    then Nothing
-    else Just $ TfClause c' a'
+-- given a tf clause, convert its assign to condition and concat it with condition
+-- e.g., a := b -> a == b
+-- also substitute the condition with the assign in best effort to simplify it
+clauseToTfCond :: TfClause -> TfCondition
+clauseToTfCond (TfClause cond assign) = newCond
+  where
+    cond' = substCond cond assign
+    newCond = simplifyCond $ TfAnd cond' (assignToCond assign)
+
+-- concat the tf conditions and assigns of 2 clauses
+-- no substitution is performed
+concatTfClauses :: TfClause -> TfClause -> TfClause
+concatTfClauses (TfClause c1 a1) (TfClause c2 a2) = TfClause c' a'
   where
     -- combine two conditions
-    c' = simplifyCond $ TfAnd c1 (substCond c2 a1)
+    c' = simplifyCond $ TfAnd c1 c2
     -- combine two assigns
     a' = concat2Assigns a1 a2
 

@@ -18,6 +18,8 @@ instance Show RouterProtoTf where
 -- given a list of link tfs which has the same source router,
 -- convert them to a router tf
 -- both routerTf and toRouterNullTf consist of 2 levels of map
+-- TODO: the router tf should be protocol independent, it should combine multiple protocols,
+-- and indicate which protocol is used, e.g., when 2 protocols learn the same prefix
 toRouterProtoTf :: Route a => [LinkProtoTf a] -> RouterProtoTf
 -- the list cannot be empty, if it is, return a dummy router tf
 toRouterProtoTf [] = RouterProtoTf 0 (Tf [])
