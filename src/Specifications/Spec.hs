@@ -72,6 +72,7 @@ specToCond spec = simplifyCond $ foldr concatSpec TfTrue spec
 -- all items should be satisfied
 -- TfAnd each fixed point condition with the and of all spec items
 -- and return a list of tf conditions which are not false
+-- TODO: eliminate internal variables
 toSpecCond :: FixedPoints -> Spec -> [TfCondition]
 toSpecCond fps spec = mapMaybe concatFp fps `using` parListChunk chunkSize rpar
   where

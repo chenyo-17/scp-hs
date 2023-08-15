@@ -35,10 +35,9 @@ data BgpAttr
 
 type BgpCommunity = Word32
 
--- action for both list and rmItem
-data Action
-  = Permit
-  | Deny
+data BgpAction
+  = BgpPermit
+  | BgpDeny
   deriving (Show, Eq)
 
 -- only consider exact mask length match for ip prefix
@@ -71,7 +70,7 @@ data BgpSet
   deriving (Eq)
 
 data RmItem = RmItem
-  { rmAction :: Action
+  { rmAction :: BgpAction
   , rmMatch  :: [BgpMatch]
   , rmSet    :: [BgpSet]
   } deriving (Eq)
@@ -94,7 +93,7 @@ bgpAttrToString attr =
     BgpFrom     -> "BgpFrom"
 
 -- user constructor API for RmItem
-toRmItem :: Action -> [BgpMatch] -> [BgpSet] -> RmItem
+toRmItem :: BgpAction -> [BgpMatch] -> [BgpSet] -> RmItem
 toRmItem = RmItem
 
 -- user constructor API for BgpRm
@@ -125,8 +124,8 @@ bgpRmToProtoTf = rmToTf TfTrue
 bgpItemToClause :: RmItem -> ProtoTfClause BgpRoute
 bgpItemToClause (RmItem action matches sets) =
   case action of
-    Permit -> ProtoTfClause conds (Just rte)
-    Deny   -> ProtoTfClause conds Nothing
+    BgpPermit -> ProtoTfClause conds (Just rte)
+    BgpDeny   -> ProtoTfClause conds Nothing
   where
     conds = foldr concatMatch TfTrue matches
       where
@@ -287,8 +286,8 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
     addFrom (RmItem action matches sets) =
       case action of
       -- only set BgpFrom if it's a Permit
-        Permit -> RmItem action matches (SetBgpFrom from : sets)
-        Deny   -> RmItem action matches sets
+        BgpPermit -> RmItem action matches (SetBgpFrom from : sets)
+        BgpDeny   -> RmItem action matches sets
 
 -- return the conditions when the first route assign is preferred
 -- the passed assigns have been added with router ids

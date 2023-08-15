@@ -37,9 +37,10 @@ data Session = Session
   , ssDst :: RouterId
   } deriving (Eq)
 
--- user API for creating a session
-toSession :: RouterId -> SessionDir -> RouterId -> Session
-toSession = Session
+data Action
+  = Permit
+  | Deny
+  deriving (Show, Eq)
 
 instance Show Session where
   show (Session src dir dst) =
@@ -98,8 +99,9 @@ class Show a =>
   attrToString :: a -> String
   attrToTfExpr :: a -> TfExpr
   attrToTfExpr = TfVar . attrToString
-  -- given a string, and its attribute type, convert it a TfConst
+  -- given a string, and its attribute type, convert it a TfExpr
   -- this restricts that any route attr assign should be converted to a single cond
+  -- TODO: consider complex expressions in spec, e.g., w + 10
   strToAttrValExpr :: a -> String -> TfExpr
 
 class Show a =>

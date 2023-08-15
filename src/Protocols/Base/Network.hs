@@ -3,8 +3,8 @@ module Protocols.Base.Network where
 import           Control.Parallel.Strategies
 import           Data.Maybe
 import           Functions.Transfer
-import           GHC.Conc                    (numCapabilities)
 import           Protocols.Base.Router
+import           Utilities.Parallel          (chunkSize)
 
 -- FIXME: protocol information is lost!
 newtype NetProtoTf =
@@ -18,11 +18,12 @@ instance Show NetProtoTf where
 -- convert them to a net proto tf
 -- TODO: specify node ordering
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
+-- compute length will make lazy evaluation fail!
+-- TODO: figure out which parallel strategy is better
 toNetProtoTf rTfs =
   NetProtoTf
     $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
   where
-    chunkSize = length prodTfClauses `div` numCapabilities
     prodTfClauses :: [[TfClause]]
     prodTfClauses = mapM (tfClauses . rTf) rTfs
     -- given a list of tf clauses, merge them to a net tf clause

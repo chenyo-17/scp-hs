@@ -67,6 +67,7 @@ library
         Protocols.Base.Router
         Protocols.Base.Network
         Utilities.Ip
+        Utilities.Parallel
         Functions.Transfer
         Protocols.Simple
 
@@ -111,6 +112,7 @@ executable protocol
         Protocols.BGP
         Protocols.Simple
         Functions.Transfer
+        Utilities.Parallel
 
 -- test-suite scp-hs-test
 --     -- Import common warning flags.

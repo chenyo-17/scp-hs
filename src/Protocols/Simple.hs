@@ -9,9 +9,14 @@ import           Functions.Transfer
 import           Protocols.Base.Protocol
 
 data SimpleRoute = SimpleRoute
-  { spWeight  :: Maybe Word32
+  { spWeight  :: Maybe SpWeightType
   , spNextHop :: Maybe Word32
   } deriving (Eq)
+
+data SpWeightType
+  = SpWeightSet Word32
+  | SpWeightAdd Word32 -- add to the original weight
+  deriving (Eq)
 
 defaultSimpleRoute :: SimpleRoute
 defaultSimpleRoute = SimpleRoute Nothing Nothing
@@ -25,6 +30,11 @@ simpleAttrToExpr :: SimpleAttr -> String
 simpleAttrToExpr SimpleWeight  = "SimpleWeight"
 simpleAttrToExpr SimpleNextHop = "SimpleNextHop"
 
+data SimpleAction
+  = SimplePermit
+  | SimpleDeny
+  deriving (Eq, Show)
+
 data SimpleMatch
   = MatchSimpleWeight Word32
   | MatchSimpleNextHop Word32
@@ -33,11 +43,13 @@ data SimpleMatch
 data SimpleSet
   = SetSimpleWeight Word32
   | SetSimpleNextHop Word32
+  | AddSimpleWeight Word32
   deriving (Eq)
 
 data SimpleFuncBranch = SimpleFuncBranch
-  { sfMatch :: [SimpleMatch]
-  , sfSet   :: [SimpleSet]
+  { sfAction :: SimpleAction
+  , sfMatch  :: [SimpleMatch]
+  , sfSet    :: [SimpleSet]
   } deriving (Eq)
 
 newtype SimpleFunc =
@@ -51,8 +63,10 @@ spAttrToString attr =
     SimpleNextHop -> "SimpleNextHop"
 
 simpleFuncBranchToClause :: SimpleFuncBranch -> ProtoTfClause SimpleRoute
-simpleFuncBranchToClause (SimpleFuncBranch matches sets) =
-  ProtoTfClause conds (Just rte)
+simpleFuncBranchToClause (SimpleFuncBranch action matches sets) =
+  case action of
+    SimplePermit -> ProtoTfClause conds (Just rte)
+    SimpleDeny   -> ProtoTfClause conds Nothing
   where
     conds = foldr concatMatch TfTrue matches
       where
@@ -63,7 +77,8 @@ simpleFuncBranchToClause (SimpleFuncBranch matches sets) =
     stepSet :: SimpleRoute -> SimpleSet -> SimpleRoute
     stepSet r s =
       case s of
-        SetSimpleWeight w  -> r {spWeight = Just w}
+        SetSimpleWeight w  -> r {spWeight = Just (SpWeightSet w)}
+        AddSimpleWeight w  -> r {spWeight = Just (SpWeightAdd w)}
         SetSimpleNextHop n -> r {spNextHop = Just n}
 
 simpleMatchToCond :: SimpleMatch -> TfCondition
@@ -117,7 +132,9 @@ simpleRouteToAssign (Just rte) = (fromSimpleWeight . fromSimpleNh) (TfAssign [])
     fromSimpleWeight =
       case spWeight rte of
         Nothing -> addTfAssignItem weightVar weightVar
-        Just w  -> addTfAssignItem weightVar (TfConst (TfInt w))
+        Just (SpWeightSet w) -> addTfAssignItem weightVar (TfConst (TfInt w))
+        Just (SpWeightAdd w) ->
+          addTfAssignItem weightVar (TfAdd weightVar (TfConst (TfInt w)))
       where
         weightVar = attrToTfExpr SimpleWeight
     fromSimpleNh :: TfAssign -> TfAssign
@@ -152,6 +169,10 @@ instance Route SimpleRoute where
   toTfAssign = simpleRouteToAssign
   updateRoute = updateSimpleRoute
 
+instance Show SpWeightType where
+  show (SpWeightSet w) = show w
+  show (SpWeightAdd w) = show SimpleWeight ++ " + " ++ show w
+
 instance Show SimpleRoute where
   show r =
     (intercalate ", " . catMaybes)
@@ -164,8 +185,8 @@ instance Show SimpleRoute where
       showJust s (Just v) = Just $ s ++ " := " ++ show v
 
 instance Show SimpleFuncBranch where
-  show (SimpleFuncBranch match set) =
-    "if " ++ show match ++ " then " ++ show set
+  show (SimpleFuncBranch action match set) =
+    show action ++ ": " ++ show match ++ " -> " ++ show set
 
 instance Show SimpleFunc where
   show (SimpleFunc branches) = unlines $ map show branches
@@ -176,4 +197,5 @@ instance Show SimpleMatch where
 
 instance Show SimpleSet where
   show (SetSimpleWeight w)  = "weight := " ++ show w
+  show (AddSimpleWeight w)  = "weight += " ++ show w
   show (SetSimpleNextHop n) = "next-hop := " ++ show n

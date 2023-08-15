@@ -9,12 +9,13 @@ import           GHC.IO
 
 data SExpr
   = EBool SBool
+  | EWord SWord32
   | EInt SInt32
 
-type SymDict = Map.Map String SInt32
+type SymDict = Map.Map String SWord32
 
 toSBVLiteral :: TfLiteral -> SExpr
-toSBVLiteral (TfInt i)  = EInt $ literal (fromIntegral i :: Int32)
+toSBVLiteral (TfInt i)  = EWord $ literal (fromIntegral i :: Word32)
 toSBVLiteral (TfBool b) = EBool $ literal b
 -- assume there is only positive integer constraints
 toSBVLiteral TfNull     = EInt (-1)
@@ -23,19 +24,19 @@ toSBVLiteral TfNull     = EInt (-1)
 toSBVExpr :: SymDict -> TfExpr -> Symbolic (SymDict, SExpr)
 toSBVExpr dict (TfVar s) =
   case Map.lookup s dict of
-    Just symVar -> return (dict, EInt symVar)
+    Just symVar -> return (dict, EWord symVar)
     Nothing -> do
-      newVar <- sInt32 s
+      newVar <- sWord32 s
       let newDict = Map.insert s newVar dict
-      return (newDict, EInt newVar)
+      return (newDict, EWord newVar)
 toSBVExpr dict (TfConst lit) = return (dict, toSBVLiteral lit)
 toSBVExpr dict (TfAdd e1 e2) = do
-  (newDict, EInt se1) <- toSBVExpr dict e1
-  (newDict', EInt se2) <- toSBVExpr newDict e2
-  return (newDict', EInt $ se1 + se2)
+  (newDict, EWord se1) <- toSBVExpr dict e1
+  (newDict', EWord se2) <- toSBVExpr newDict e2
+  return (newDict', EWord $ se1 + se2)
 
 applyOp :: TfOpA -> SExpr -> SExpr -> SBool
-applyOp op (EInt e1) (EInt e2) =
+applyOp op (EWord e1) (EWord e2) =
   case op of
     TfGe -> e1 .>= e2
     TfLe -> e1 .<= e2
