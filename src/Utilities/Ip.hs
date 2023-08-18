@@ -1,20 +1,26 @@
 module Utilities.Ip where
 
+import           Data.Bits
 import           Data.IP
 import           Data.Word
-import Data.Bits
 
 type IpPrefix = AddrRange IPv4
 
+ipPrefix :: String -> IpPrefix
+ipPrefix str = read str :: IpPrefix
+
 type Ip = IPv4
+
+ip :: String -> Ip
+ip str = read str :: Ip
 
 type IpRangew = (Word32, Word32)
 
 -- convert a IpPrefix to its integer range
 toIpRangew :: IpPrefix -> IpRangew
-toIpRangew ipPrefix = (ipLow, ipHiw)
+toIpRangew prefix = (ipLow, ipHiw)
   where
-    (ipLo, maskLen) = addrRangePair ipPrefix
+    (ipLo, maskLen) = addrRangePair prefix
     ipLow = fromIPv4w ipLo
     ipHiw = ipLow .|. maxBoundAddr maskLen
       where

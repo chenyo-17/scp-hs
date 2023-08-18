@@ -103,7 +103,9 @@ mainSimple = do
   let fpCond = toNetFpCond [rTf0, rTf1, rTf2]
   putStrLn $ "net fp cond:\n" ++ showConds fpCond
   let specs =
-        [RouterState (toAttrSpec SimpleWeight (Router 1) TfEq (Const "50"))]
+        [ RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50"))
+        , RouterState (AttrSpec SimpleNextHop (Router 1) TfEq (Const "2"))
+        ]
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond fpCond specs
   putStrLn $ "\nSpecCond: \n" ++ showConds specCond
@@ -111,13 +113,13 @@ mainSimple = do
 mainBgp :: IO ()
 mainBgp = do
   putStrLn ""
-  let ip1 = read "0.0.0.16/28" :: IpPrefix
-  let ip2 = read "0.0.0.32/28" :: IpPrefix
+  let ip1 = ipPrefix "0.0.0.16/28"
+  let ip2 = ipPrefix "0.0.0.32/28"
   let pl1 = [ip1, ip2]
-  let ip3 = read "0.0.0.17" :: Ip
-  let ip6 = read "0.0.0.65" :: Ip
-  let ip4 = read "0.0.0.64/28" :: IpPrefix
-  let ip5 = read "0.0.0.128/28" :: IpPrefix
+  let ip3 = ip "0.0.0.17"
+  let ip6 = ip "0.0.0.65"
+  let ip4 = ipPrefix "0.0.0.64/28"
+  let ip5 = ipPrefix "0.0.0.128/28"
   let pl2 = [ip4, ip5]
   let cl1 = [2001]
   let cl2 = [1001]

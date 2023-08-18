@@ -142,7 +142,7 @@ bgpItemToClause (RmItem action matches sets) =
         SetBgpNextHop nh  -> r {bgpNextHop = Just nh}
         SetCommunity comm -> r {community = Just comm}
         SetBgpFrom fr     -> r {bgpFrom = Just fr}
-        SetIpPrefix ip    -> r {bgpIpPrefix = Just ip}
+        SetIpPrefix ipP   -> r {bgpIpPrefix = Just ipP}
 
 -- given a attribute type, and a string, parse it to a TfExpr
 -- FIXME: this is a bit duplicate with bgpRouteToAssign, it is just used to parse spec
@@ -150,8 +150,8 @@ bgpStrToAttrValExpr :: BgpAttr -> String -> TfExpr
 bgpStrToAttrValExpr LocalPref lp = (TfConst . TfInt) (read lp :: Word32)
 bgpStrToAttrValExpr BgpNextHop nh = (TfConst . TfInt . fromIpw) (read nh :: Ip)
 bgpStrToAttrValExpr Community c = (TfConst . TfInt) (read c :: Word32)
-bgpStrToAttrValExpr BgpIpPrefix ip =
-  (TfConst . TfInt . fst . toIpRangew) (read ip :: IpPrefix)
+bgpStrToAttrValExpr BgpIpPrefix ipP =
+  (TfConst . TfInt . fst . toIpRangew) (read ipP :: IpPrefix)
 bgpStrToAttrValExpr BgpFrom fr = (TfConst . TfInt) (read fr :: Word32)
 
 -- convert a BgpRoute to a TfAssign
@@ -184,10 +184,10 @@ bgpRouteToAssign (Just rte) =
     fromIpPrefix =
       case bgpIpPrefix rte of
         Nothing -> addTfAssignItem ipPrefixVar ipPrefixVar
-        Just ip
+        Just ipP
           -- an ip prefix set is to a single value
          ->
-          addTfAssignItem ipPrefixVar (TfConst (TfInt ((fst . toIpRangew) ip)))
+          addTfAssignItem ipPrefixVar (TfConst (TfInt ((fst . toIpRangew) ipP)))
       where
         ipPrefixVar = attrToTfExpr BgpIpPrefix
     fromBgpCommunity :: TfAssign -> TfAssign
@@ -341,9 +341,10 @@ instance ProtocolTf BgpRm where
           else rm
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
-instance Route BgpRoute where
+instance Route BgpRoute
   -- FIXME: some methods are required only because cannot know the attribute
   -- during the runtime
+                        where
   preferFstCond = preferFstBgpCond
   toTfAssign = bgpRouteToAssign
   updateRoute = updateBgpRoute
@@ -358,7 +359,7 @@ instance Show BgpSet where
   show (SetBgpNextHop nh) = "set next-hop " ++ show nh
   show (SetCommunity c)   = "set community " ++ show c
   show (SetBgpFrom f)     = "set from " ++ show f
-  show (SetIpPrefix ip)   = "set ip-prefix " ++ show ip
+  show (SetIpPrefix ipP)  = "set ip-prefix " ++ show ipP
 
 instance Show RmItem where
   show (RmItem action match set) =

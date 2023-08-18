@@ -6,9 +6,9 @@ import           Control.Parallel.Strategies
 import           Data.Maybe                  (mapMaybe)
 import           Functions.Solver
 import           Functions.Transfer
-import           GHC.Conc
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
+import           Utilities.Parallel
 
 -- different types of spec
 -- TODO: add reachability
@@ -76,7 +76,6 @@ specToCond spec = simplifyCond $ foldr concatSpec TfTrue spec
 toSpecCond :: FixedPoints -> Spec -> [TfCondition]
 toSpecCond fps spec = mapMaybe concatFp fps `using` parListChunk chunkSize rpar
   where
-    chunkSize = length fps `div` numCapabilities
     specCond = specToCond spec
     concatFp :: TfCondition -> Maybe TfCondition
     concatFp fp =
