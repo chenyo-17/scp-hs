@@ -2,13 +2,10 @@
 
 module Specifications.Spec where
 
-import           Control.Parallel.Strategies
-import           Data.Maybe                  (mapMaybe)
 import           Functions.Solver
 import           Functions.Transfer
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
-import           Utilities.Parallel
 
 -- different types of spec
 -- TODO: add reachability
@@ -69,18 +66,23 @@ specToCond spec = simplifyCond $ foldr concatSpec TfTrue spec
     concatSpec (RouterState attrSpec) cond =
       cond `TfAnd` attrSpecToCond attrSpec
 
--- all items should be satisfied
--- TfAnd each fixed point condition with the and of all spec items
--- and return a list of tf conditions which are not false
--- TODO: eliminate internal variables
-toSpecCond :: FixedPoints -> Spec -> [TfCondition]
-toSpecCond fps spec = mapMaybe concatFp fps `using` parListChunk chunkSize rpar
+-- given a net proto tf and a spec, return a list of tf conditions under which
+-- the spec is satisfied, the condition only contains environmental variables,
+-- e.g., variables that are not assigned in the tf
+-- this function first add the spec condition to each tf clause condition,
+-- then concat the condition and the assign, simplify it, and call the solver
+-- to determine whether the resulting is satisfiable
+-- if so, eliminate internal variables, and return the condition
+toSpecCond :: NetProtoTf -> Spec -> IO [TfCondition]
+toSpecCond (NetProtoTf (Tf nTfCs)) spec = filterNoFalse $ map stepClause nTfCs
   where
     specCond = specToCond spec
-    concatFp :: TfCondition -> Maybe TfCondition
-    concatFp fp =
-      case newCond of
-        TfFalse -> Nothing
-        _       -> Just newCond
-      where
-        newCond = simplifyCondWithSolver $ fp `TfAnd` specCond
+    stepClause :: TfClause -> IO TfCondition
+    -- TODO: use BDD to simplify the condition?
+    stepClause tfC@(TfClause _ assign) =
+      simplifyCondWithSolver
+        (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)
+    filterNoFalse :: [IO TfCondition] -> IO [TfCondition]
+    filterNoFalse condsIO = do
+      conds <- sequence condsIO -- convert [IO TfCondition] to IO [TfCondition]
+      return $ filter (/= TfFalse) conds

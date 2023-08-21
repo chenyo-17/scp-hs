@@ -5,7 +5,6 @@ module Functions.Solver
 import qualified Data.Map           as Map
 import           Data.SBV
 import           Functions.Transfer
-import           GHC.IO
 
 data SExpr
   = EBool SBool
@@ -73,10 +72,11 @@ toSBVCond cond = snd <$> toSBVCond' Map.empty cond
       (newDict', se2) <- toSBVExpr newDict e2
       return (newDict', applyOp op se1 se2)
 
-simplifyCondWithSolver :: TfCondition -> TfCondition
-simplifyCondWithSolver cond =
-  unsafePerformIO $ do
-    satRes <- sat $ toSBVCond cond
-    case satRes of
-      SatResult (Satisfiable _ _) -> return cond
-      _                           -> return TfFalse
+simplifyCondWithSolver :: TfCondition -> IO TfCondition
+simplifyCondWithSolver TfFalse = return TfFalse
+simplifyCondWithSolver TfTrue  = return TfTrue
+simplifyCondWithSolver cond = do
+  satRes <- sat $ toSBVCond cond
+  case satRes of
+    SatResult (Satisfiable _ _) -> return cond
+    _                           -> return TfFalse

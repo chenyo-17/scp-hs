@@ -38,6 +38,7 @@ data TfLiteral
   -- | TfPattern String -- regular expression
   deriving (Eq)
 
+-- TODO: implement Eq, e.g., TfOr a b == TfOr b a
 data TfCondition
   = TfCond TfExpr TfOpA TfExpr
   | TfTrue

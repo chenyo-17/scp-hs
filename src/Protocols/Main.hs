@@ -109,14 +109,10 @@ mainSimple = do
   --       ]
   -- print myAssign
   -- print $ unwrapAssign myAssign
-  -- let fpCond = toNetFpCond [rTf0, rTf1, rTf2]
-  -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
-  -- let specs =
-        -- [ RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50"))
-        -- ]
-  -- putStrLn $ "Spec: \n" ++ show specs
-  -- let specCond = toSpecCond fpCond specs
-  -- putStrLn $ "\nSpecCond: \n" ++ showConds specCond
+  let specs = [RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50"))]
+  putStrLn $ "Spec: \n" ++ show specs
+  specCond <- toSpecCond netTf specs
+  putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
 
 mainBgp :: IO ()
 mainBgp = do
@@ -206,16 +202,16 @@ mainBgp = do
   print rTf2
   -- print network tfs
   let netTf = toNetProtoTf [rTf1, rTf2]
-  print netTf
+  -- print netTf
   -- let fpCond = toNetFpCond [rTf1, rTf2]
   -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
-  -- let specs =
-        -- [ RouterState
-            -- (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.64/28"))
-        -- ]
-  -- putStrLn $ "Spec: \n" ++ show specs
-  -- let specCond = toSpecCond fpCond specs
-  -- putStrLn $ "SpecCond: \n" ++ showConds specCond
+  let specs =
+        [ RouterState
+            (toAttrSpec LocalPref (Router 1) TfEq (Const "250"))
+        ]
+  putStrLn $ "Spec: \n" ++ show specs
+  specCond <- toSpecCond netTf specs
+  putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
 
 main :: IO ()
 main = do
