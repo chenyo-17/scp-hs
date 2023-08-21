@@ -109,7 +109,7 @@ preferFstSimpleCond :: Maybe SimpleRoute -> TfAssign -> TfAssign -> TfCondition
 preferFstSimpleCond _ ass1 ass2
   | isNullAssign ass1 = TfFalse
   | isNullAssign ass2 = TfTrue
-  | otherwise = TfOr largerWeight (TfAnd sameWeight smallerNextHop)
+  | otherwise = TfOr largerWeight (TfAnd sameWeight largerNextHop)
   where
     getSimpleWeight1 = fromJust $ getAssignVal (attrToTfExpr SimpleWeight) ass1
     getSimpleWeight2 = fromJust $ getAssignVal (attrToTfExpr SimpleWeight) ass2
@@ -117,7 +117,7 @@ preferFstSimpleCond _ ass1 ass2
     getNextHop = fromJust . getAssignVal (attrToTfExpr SimpleNextHop)
     largerWeight = TfCond getSimpleWeight1 TfGt getSimpleWeight2
     sameWeight = TfCond getSimpleWeight1 TfEq getSimpleWeight2
-    smallerNextHop = TfCond (getNextHop ass1) TfLt (getNextHop ass2)
+    largerNextHop = TfCond (getNextHop ass1) TfGt (getNextHop ass2)
 
 simpleRouteToAssign :: Maybe SimpleRoute -> TfAssign
 simpleRouteToAssign Nothing = toNullSimpleAssign

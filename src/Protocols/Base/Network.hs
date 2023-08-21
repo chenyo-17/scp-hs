@@ -1,9 +1,17 @@
 module Protocols.Base.Network where
 
 import           Control.Parallel.Strategies
+import           Data.Maybe                  (mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Router
 import           Utilities.Parallel          (chunkSize)
+
+newtype NetProtoTf =
+  NetProtoTf Tf
+  deriving (Eq)
+
+instance Show NetProtoTf where
+  show (NetProtoTf tf) = "netTf:\n" ++ show tf
 
 -- given a list of router proto tfs,
 -- product each tf clause and merge conditions and assigns separately
@@ -30,6 +38,37 @@ toNetFpCond rTfs =
     noFalse _       = True
 
 type FixedPoints = [TfCondition]
+
+toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
+toNetProtoTf rTfs = NetProtoTf $ Tf (mapMaybe mergeRTfs prodTfClauses)
+  where
+    prodTfClauses :: [[TfClause]]
+    prodTfClauses = mapM (tfClauses . rTf) rTfs
+    -- given a list of tf clauses, merge them to a net tf clause
+    mergeRTfs :: [TfClause] -> Maybe TfClause
+    -- not add false conditions
+    mergeRTfs tfCs =
+      case tfCond newClause of
+        TfFalse -> Nothing
+        -- check whether the new clause is valid
+        -- even if here we do a complete substitution, the partial substitution in
+        -- concatClauses is still required, otherwise the condition cannot be fully simplified
+        _ ->
+          if clauseToTfCond newClause == TfFalse
+            then Nothing
+            else Just newClause
+      where
+        newClause = foldr concatClauses (TfClause TfTrue (TfAssign [])) tfCs
+        -- for each new clause, first substitute last assign
+        -- then simplify
+        concatClauses :: TfClause -> TfClause -> TfClause
+        concatClauses _ acc@(TfClause TfFalse _) = acc
+        concatClauses (TfClause cond1 ass1) (TfClause cond2 ass2) =
+          TfClause
+            (simplifyCond $ TfAnd cond1' cond2)
+            (concat2Assigns ass1 ass2)
+          where
+            cond1' = substCond cond1 ass2
 
 showConds :: [TfCondition] -> String
 showConds fpConds = unlines (map show fpConds)
