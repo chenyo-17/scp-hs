@@ -1,8 +1,7 @@
 module Protocols.Base.Router where
 
-import           Control.Parallel.Strategies
-import           Data.List                   (foldl')
-import           Data.Maybe                  (mapMaybe)
+import           Data.List               (foldl')
+import           Data.Maybe              (mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Protocol
 
@@ -59,7 +58,7 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
         -- merge them and add to the new list
         -- accTfCs is always rewritten
         concatPTfs accTfCs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) =
-          concatMap mergeTfClauses pTfCs `using` parList rpar
+          concatMap mergeTfClauses pTfCs
           -- not use chunk as pTfCs is usually smaller than accTfs
           -- and the computation for each clause is intensive
           where
@@ -119,7 +118,7 @@ toRouterNullTf lPTfs = foldr prodNullTfCs [TfClause TfFalse TfAssignNull] lPTfs
             -- null assign
             newAssign = appendAssignVar (show src) (toTfAssign rte)
     prodNullTfCs (LinkProtoTf (Link _ dst) (ProtoTf pTfCs)) accTfCs_ =
-      concatMap concatNullTfCond pTfCs `using` parList rpar
+      concatMap concatNullTfCond pTfCs
         -- concat one pTf clause with each accTf clause
       where
         concatNullTfCond :: Route a => ProtoTfClause a -> [TfClause]
