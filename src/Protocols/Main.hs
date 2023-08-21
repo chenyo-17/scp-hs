@@ -205,6 +205,8 @@ mainBgp = do
   print rTf1
   print rTf2
   -- print network tfs
+  let netTf = toNetProtoTf [rTf1, rTf2]
+  print netTf
   -- let fpCond = toNetFpCond [rTf1, rTf2]
   -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
   -- let specs =
@@ -217,7 +219,7 @@ mainBgp = do
 
 main :: IO ()
 main = do
-  mainSimple
+  mainBgp
   -- let test =
   --       TfAnd
   --         (TfCond

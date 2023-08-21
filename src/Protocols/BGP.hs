@@ -59,6 +59,7 @@ data BgpMatch
   = MatchCommunity BgpCl
   | MatchBgpIpPrefix BgpPl -- only consider exact match
   | MatchBgpNextHop BgpPl
+  | MatchBgpFrom RouterId
   deriving (Eq)
 
 data BgpSet
@@ -255,6 +256,7 @@ bgpMatchToCond m =
       where concatClItem :: BgpClItem -> TfCondition -> TfCondition
             concatClItem _ TfTrue = TfTrue
             concatClItem ci cond  = TfOr (clItemToCond ci) cond
+    MatchBgpFrom fr -> TfCond (attrToTfExpr BgpFrom) TfEq (TfConst (TfInt fr))
 
 -- convert a BgpPlItem to a TfCondition
 -- for next hop, the condition is a range,
@@ -289,6 +291,13 @@ setBgpFrom from (BgpRm is) = BgpRm (map addFrom is)
         BgpPermit -> RmItem action matches (SetBgpFrom from : sets)
         BgpDeny   -> RmItem action matches sets
 
+-- prepend an item that matches the route's BgpFrom with a deny action
+denySameBgpFrom :: RouterId -> BgpRm -> BgpRm
+denySameBgpFrom from (BgpRm is) = BgpRm (denyItem : is)
+  where
+    denyItem :: RmItem
+    denyItem = RmItem BgpDeny [MatchBgpFrom from] []
+
 -- return the conditions when the first route assign is preferred
 -- the passed assigns have been added with router ids
 -- the first argument is dummy, just to locate the instance
@@ -307,13 +316,13 @@ preferFstBgpCond _ ass1 ass2
       (TfNot sameIpPrefix)
       (TfAnd
          sameIpPrefix
-         (TfOr largerLocalPref (TfAnd sameLocalPref smallerFrom)))
+         (TfOr largerLocalPref (TfAnd sameLocalPref largerFrom)))
   -- prefer lower lp, and then larger from (to prefer external route later)
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
     sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
-    smallerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
+    largerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
     getIpPrefix :: TfAssign -> TfExpr
       -- null case is already handled, here it must be just
     getIpPrefix = fromJust . getAssignVal (attrToTfExpr BgpIpPrefix)
@@ -330,14 +339,15 @@ instance ProtoAttr BgpAttr where
 
 instance ProtocolTf BgpRm where
   type RouteType BgpRm = BgpRoute
-  toSsProtoTf (ss@(Session _ sDir sDst), rm) = sTf
+  toSsProtoTf (ss@(Session sSrc sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
+    -- and prepend matchBgpFrom -> drop to the first item
     -- TODO: also and additional match, e.g., matchSession
     -- TODO: think about how to let Protocol handle additional attribute
     where
       rm' =
         if sDir == Import
-          then setBgpFrom sDst rm
+          then denySameBgpFrom sSrc (setBgpFrom sDst rm)
           else rm
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
@@ -353,6 +363,7 @@ instance Show BgpMatch where
   show (MatchCommunity cl)   = "match community " ++ show cl
   show (MatchBgpIpPrefix pl) = "match ip-prefix " ++ show pl
   show (MatchBgpNextHop nh)  = "match next-hop " ++ show nh
+  show (MatchBgpFrom fr)     = "match from " ++ show fr
 
 instance Show BgpSet where
   show (SetLocalPref lp)  = "set local-pref " ++ show lp
