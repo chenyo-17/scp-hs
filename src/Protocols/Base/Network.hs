@@ -58,7 +58,10 @@ toNetProtoTf rTfs = NetProtoTf $ Tf (mapMaybe mergeRTfs prodTfClauses)
             then Nothing
             else Just newClause
       where
-        newClause = foldr concatClauses (TfClause TfTrue (TfAssign [])) tfCs
+        TfClause cond assign =
+          foldr concatClauses (TfClause TfTrue (TfAssign [])) tfCs
+        -- unwrap assign
+        newClause = TfClause cond (unwrapAssign assign)
         -- for each new clause, first substitute last assign
         -- then simplify
         concatClauses :: TfClause -> TfClause -> TfClause

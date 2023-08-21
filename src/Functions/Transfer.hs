@@ -47,7 +47,7 @@ data TfCondition
   | TfOr TfCondition TfCondition
   deriving (Eq)
 
--- the key is CVar
+-- the key is TfVar
 data TfAssignItem = TfAssignItem
   { assignVar   :: TfExpr
   , assignValue :: TfExpr
@@ -327,6 +327,54 @@ appendExprVar str expr =
     TfVar v     -> TfVar $ v ++ str
     TfAdd e1 e2 -> TfAdd (appendExprVar str e1) (appendExprVar str e2)
     _           -> expr
+
+type TfExprPair = (TfExpr, TfExpr)
+
+-- convert a list of tf assign items to an association list
+-- where the key is the variable and the value is the value
+toAssList :: [TfAssignItem] -> [TfExprPair]
+toAssList = map (\item -> (assignVar item, assignValue item))
+
+-- convert an association list to a list of tf assign items
+fromAssList :: [TfExprPair] -> [TfAssignItem]
+fromAssList = map (uncurry TfAssignItem)
+
+-- given a tf clause, substitute each assign value to the eventual unwrapped value
+-- e.g., {a := b, b := c, c := 10} -> {a := 10, b := 10, c := 10}
+-- if a value is already a constant, or it is a var that does not appear in the assign,
+-- then it is unwrapped. Otherwise always unwrap the value as deep as it could be
+-- Note that this function assumes there is no cyclic dependencies
+unwrapAssign :: TfAssign -> TfAssign
+unwrapAssign TfAssignNull = TfAssignNull
+unwrapAssign (TfAssign oldAssign) =
+  TfAssign (fromAssList $ foldr unwrapItem [] oldList)
+  where
+    oldList = toAssList oldAssign
+    unwrapItem :: (TfExpr, TfExpr) -> [(TfExpr, TfExpr)] -> [(TfExpr, TfExpr)]
+    -- first check whether the key is already in the acc list
+    -- which is possible as when recursively unwrapping, some keys may already be unwrapped
+    -- even if it has not been visited
+    unwrapItem (var, value) newList =
+      case lookup var newList of
+        Just _ -> newList
+        Nothing -> (var, newValue) : newList'
+          where (newValue, newList') = unwrapValue value newList
+          -- given a tf expr and a list of unwrapped values, unwrap the expr
+          -- and update the list during the recursive unwrapping
+                unwrapValue ::
+                     TfExpr
+                  -> [(TfExpr, TfExpr)]
+                  -> (TfExpr, [(TfExpr, TfExpr)])
+                unwrapValue (TfConst lit) acc = (TfConst lit, acc)
+                unwrapValue v@(TfVar _) acc =
+                  case lookup v oldList of
+            -- the variable is an environment variable
+                    Nothing  -> (v, acc)
+                    Just val -> unwrapValue val acc
+                unwrapValue (TfAdd e1 e2) acc = (TfAdd e1' e2', acc'')
+                  where
+                    (e1', acc') = unwrapValue e1 acc
+                    (e2', acc'') = unwrapValue e2 acc'
 
 instance Show TfOpA where
   show op =

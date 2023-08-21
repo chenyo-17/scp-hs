@@ -102,6 +102,13 @@ mainSimple = do
   print rTf2
   let netTf = toNetProtoTf [rTf0, rTf1, rTf2]
   print netTf
+  -- let myAssign = TfAssign
+  --       [ TfAssignItem (TfVar "x") (TfVar "y")
+  --       , TfAssignItem (TfVar "z") (TfVar "x")
+  --       , TfAssignItem (TfVar "y") (TfAdd (TfVar "a1") (TfVar "10"))
+  --       ]
+  -- print myAssign
+  -- print $ unwrapAssign myAssign
   -- let fpCond = toNetFpCond [rTf0, rTf1, rTf2]
   -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
   -- let specs =
