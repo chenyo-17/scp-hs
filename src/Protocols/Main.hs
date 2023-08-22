@@ -10,10 +10,12 @@ import           Protocols.Base.Protocol
 import           Protocols.Base.Router
 import           Protocols.Simple
 import           Specifications.Spec
+import           System.Environment
+import           Utilities.Io
 import           Utilities.Ip
 
-mainSimple :: IO ()
-mainSimple = do
+mainSimple :: FilePath -> IO ()
+mainSimple condOutPath = do
   putStrLn ""
   -- all export funcs are empty
   -- TODO: automate this
@@ -111,11 +113,13 @@ mainSimple = do
   -- print $ unwrapAssign myAssign
   let specs = [RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50"))]
   putStrLn $ "Spec: \n" ++ show specs
-  specCond <- toSpecCond netTf specs
-  putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
+  let specCond = toSpecCond netTf specs
+  writeListToFile condOutPath specCond
+  -- specCond <- toSpecCond netTf specs
+  -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
 
-mainBgp :: IO ()
-mainBgp = do
+mainBgp :: FilePath -> IO ()
+mainBgp condOutPath = do
   putStrLn ""
   let ip1 = ipPrefix "0.0.0.16/28"
   let ip2 = ipPrefix "0.0.0.32/28"
@@ -205,22 +209,14 @@ mainBgp = do
   -- print netTf
   -- let fpCond = toNetFpCond [rTf1, rTf2]
   -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
-  let specs =
-        [ RouterState
-            (toAttrSpec LocalPref (Router 1) TfEq (Const "250"))
-        ]
+  let specs = [RouterState (toAttrSpec LocalPref (Router 1) TfGe (Const "200"))]
   putStrLn $ "Spec: \n" ++ show specs
-  specCond <- toSpecCond netTf specs
-  putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
+  let specCond = toSpecCond netTf specs
+  writeListToFile condOutPath specCond
+  -- specCond <- toSpecCond netTf specs
+  -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
 
 main :: IO ()
 main = do
-  mainBgp
-  -- let test =
-  --       TfAnd
-  --         (TfCond
-  --            (TfAdd (TfConst (TfInt 12)) (TfAdd (TfVar "x") (TfVar "y")))
-  --            TfEq
-  --            (TfConst (TfInt 19)))
-  --         (TfCond (TfVar "y") TfEq (TfVar "x"))
-  -- print $ simplifyCondWithSolver test
+  [condOutPath] <- getArgs
+  mainBgp condOutPath

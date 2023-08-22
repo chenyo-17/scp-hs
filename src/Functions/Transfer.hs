@@ -410,8 +410,8 @@ instance Show TfCondition where
       TfTrue -> show True
       TfFalse -> show False
       TfNot c -> "not " ++ "(" ++ show c ++ ")"
-      TfAnd c1 c2 -> "(" ++ show c1 ++ ")" ++ " && " ++ "(" ++ show c2 ++ ")"
-      TfOr c1 c2 -> "(" ++ show c1 ++ ")" ++ " || " ++ "(" ++ show c2 ++ ")"
+      TfAnd c1 c2 -> "(" ++ show c1 ++ ")" ++ " & " ++ "(" ++ show c2 ++ ")"
+      TfOr c1 c2 -> "(" ++ show c1 ++ ")" ++ " | " ++ "(" ++ show c2 ++ ")"
 
 instance Show TfAssignItem where
   show (TfAssignItem e1 e2) = show e1 ++ " := " ++ show e2

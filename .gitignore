@@ -63,3 +63,7 @@ jspm_packages
 *.kateproject
 *.sublime-project
 *.sublime-workspace
+*.so
+*.c
+*.egg*/
+*.lock

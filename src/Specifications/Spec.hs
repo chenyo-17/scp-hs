@@ -2,7 +2,6 @@
 
 module Specifications.Spec where
 
-import           Functions.Solver
 import           Functions.Transfer
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
@@ -70,19 +69,16 @@ specToCond spec = simplifyCond $ foldr concatSpec TfTrue spec
 -- the spec is satisfied, the condition only contains environmental variables,
 -- e.g., variables that are not assigned in the tf
 -- this function first add the spec condition to each tf clause condition,
--- then concat the condition and the assign, simplify it, and call the solver
--- to determine whether the resulting is satisfiable
--- if so, eliminate internal variables, and return the condition
-toSpecCond :: NetProtoTf -> Spec -> IO [TfCondition]
-toSpecCond (NetProtoTf (Tf nTfCs)) spec = filterNoFalse $ map stepClause nTfCs
+-- then concat the condition and the assign and simplify it
+-- finally, Or all the conditions
+toSpecCond :: NetProtoTf -> Spec -> TfCondition
+toSpecCond (NetProtoTf (Tf nTfCs)) spec =
+  simplifyCond (foldr TfOr TfFalse $ filter noFalse $ map stepClause nTfCs)
   where
     specCond = specToCond spec
-    stepClause :: TfClause -> IO TfCondition
-    -- TODO: use BDD to simplify the condition?
+    stepClause :: TfClause -> TfCondition
     stepClause tfC@(TfClause _ assign) =
-      simplifyCondWithSolver
-        (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)
-    filterNoFalse :: [IO TfCondition] -> IO [TfCondition]
-    filterNoFalse condsIO = do
-      conds <- sequence condsIO -- convert [IO TfCondition] to IO [TfCondition]
-      return $ filter (/= TfFalse) conds
+      substCond (TfAnd (clauseToTfCond tfC) specCond) assign
+    noFalse :: TfCondition -> Bool
+    noFalse TfFalse = False
+    noFalse _       = True
