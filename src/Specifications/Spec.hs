@@ -17,12 +17,26 @@ instance Show SpecItem where
 --   Reachability :: RouterId -> RouterId -> SpecItem
 -- hide a type in a list
 -- data SpecItem = forall a. ProtoAttr a => MkSpecItem (SpecItem_ a)
-type Spec = [SpecItem]
+data Spec
+  = SItem SpecItem
+  | SpecAnd Spec Spec
+  | SpecOr Spec Spec
+  | STrue -- no specification or assumption
+
+instance Show Spec where
+  show (SItem specItem)      = show specItem
+  show (SpecAnd spec1 spec2) = "(" ++ show spec1 ++ ") & (" ++ show spec2 ++ ")"
+  show (SpecOr spec1 spec2)  = "(" ++ show spec1 ++ ") | (" ++ show spec2 ++ ")"
+  show STrue                 = "True"
+
+-- FIXME: assumptions should be about routes,
+-- but here it is state of routers
+type Assump = Spec
 
 -- the left/right of an attrCond can be either a router id, or a specific value
 data AttrCondExpr
   = Router RouterId
-  | Const String
+  | Const String -- this is protocol specific
   deriving (Eq)
 
 instance Show AttrCondExpr where
@@ -58,27 +72,29 @@ attrSpecToCond (AttrSpec attr left op right) = TfCond leftExpr op rightExpr
 
 -- convert a list of spec items to a tf condition
 specToCond :: Spec -> TfCondition
-specToCond spec = simplifyCond $ foldr concatSpec TfTrue spec
-  where
-    concatSpec :: SpecItem -> TfCondition -> TfCondition
-    concatSpec _ TfFalse = TfFalse
-    concatSpec (RouterState attrSpec) cond =
-      cond `TfAnd` attrSpecToCond attrSpec
+specToCond (SItem (RouterState attrSpec)) = attrSpecToCond attrSpec
+specToCond (SpecAnd spec1 spec2) = TfAnd (specToCond spec1) (specToCond spec2)
+specToCond (SpecOr spec1 spec2) = TfOr (specToCond spec1) (specToCond spec2)
+specToCond STrue = TfTrue
 
--- given a net proto tf and a spec, return a list of tf conditions under which
--- the spec is satisfied, the condition only contains environmental variables,
+-- given a net proto tf, a spec and an assumption,
+-- return a list of tf conditions under which
+-- the spec is satisfied while assumption holds,
+-- the condition only contains environmental variables,
 -- e.g., variables that are not assigned in the tf
 -- this function first add the spec condition to each tf clause condition,
 -- then concat the condition and the assign and simplify it
 -- finally, Or all the conditions
-toSpecCond :: NetProtoTf -> Spec -> TfCondition
-toSpecCond (NetProtoTf (Tf nTfCs)) spec =
-  simplifyCond (foldr TfOr TfFalse $ filter noFalse $ map stepClause nTfCs)
+toSpecCond :: NetProtoTf -> Assump -> Spec -> TfCondition
+toSpecCond (NetProtoTf (Tf nTfCs)) assump spec =
+  simplifyCond
+  -- assume assumptions only contain environmental variables
+  -- so no need to be substituted
+    (TfAnd assumpCond (foldr (TfOr . stepClause) TfFalse nTfCs))
   where
-    specCond = specToCond spec
+    specCond = (simplifyCond . specToCond) spec
+    assumpCond = (simplifyCond . specToCond) assump
     stepClause :: TfClause -> TfCondition
-    stepClause tfC@(TfClause _ assign) =
-      substCond (TfAnd (clauseToTfCond tfC) specCond) assign
-    noFalse :: TfCondition -> Bool
-    noFalse TfFalse = False
-    noFalse _       = True
+    stepClause tfC@(TfClause _ assign)
+      -- negate spec
+     = substCond (TfAnd (clauseToTfCond tfC) specCond) assign

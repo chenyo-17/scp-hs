@@ -162,7 +162,8 @@ instance ProtoAttr SimpleAttr where
 
 instance ProtocolTf SimpleFunc where
   type RouteType SimpleFunc = SimpleRoute
-  toSsProtoTf (ss, sf) = SessionProtoTf ss (simpleFuncToProtoTf sf)
+  -- this protocol does not care about internal/external routers
+  toSsProtoTf _ (ss, sf) = SessionProtoTf ss (simpleFuncToProtoTf sf)
 
 instance Route SimpleRoute where
   preferFstCond = preferFstSimpleCond

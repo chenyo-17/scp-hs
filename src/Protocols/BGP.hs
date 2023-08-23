@@ -339,7 +339,7 @@ instance ProtoAttr BgpAttr where
 
 instance ProtocolTf BgpRm where
   type RouteType BgpRm = BgpRoute
-  toSsProtoTf (ss@(Session sSrc sDir sDst), rm) = sTf
+  toSsProtoTf intRs (ss@(Session sSrc sDir sDst), rm) = sTf
     -- if it is an import session, set BgpFrom in every item
     -- and prepend matchBgpFrom -> drop to the first item
     -- TODO: also and additional match, e.g., matchSession
@@ -347,8 +347,12 @@ instance ProtocolTf BgpRm where
     where
       rm' =
         if sDir == Import
-          then denySameBgpFrom sSrc (setBgpFrom sDst rm)
+          -- if the dst is an internal router, deny the same bgp from to avoid loop
+          then if sDst `elem` intRs
+                 then denySameBgpFrom sSrc (setBgpFrom sDst rm)
+                 else setBgpFrom sDst rm
           else rm
+      -- only deny same BgpFrom if it is an internal router
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
 
 instance Route BgpRoute

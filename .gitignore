@@ -67,3 +67,4 @@ jspm_packages
 *.c
 *.egg*/
 *.lock
+*.txt

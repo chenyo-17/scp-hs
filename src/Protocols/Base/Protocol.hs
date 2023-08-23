@@ -108,15 +108,16 @@ class Show a =>
   -- declare the relationship between a protocol and its route type
   type RouteType a :: Type
   -- given a session function, convert to a session proto tf
+  -- a list of internal routers is used to distinguish tf between internal and external routers
   toSsProtoTf ::
-       (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
+       (Route (RouteType a)) => [RouterId] -> SessionF a -> SessionProtoTf (RouteType a)
   -- first apply toSsProtoTf, then simplify the conditions
   -- also remove false condition
   toSimpleSsProtoTf ::
-       (Route (RouteType a)) => SessionF a -> SessionProtoTf (RouteType a)
-  toSimpleSsProtoTf sF = sPTf {ssTf = simplePTf}
+       (Route (RouteType a)) => [RouterId] -> SessionF a -> SessionProtoTf (RouteType a)
+  toSimpleSsProtoTf intRs sF = sPTf {ssTf = simplePTf}
     where
-      sPTf = toSsProtoTf sF
+      sPTf = toSsProtoTf intRs sF
       simplePTf = ProtoTf (mapMaybe simpleCond sPTfC)
         where
           sPTfC = pTfClauses (ssTf sPTf)
@@ -126,18 +127,19 @@ class Show a =>
           _       -> Just (ProtoTfClause cond' route)
         where
           cond' = simplifyCond cond
-  -- given a pair of session functions, convert to a link tf
+  -- given a pair of session functions, and a list of internal routers,
+  --  convert to a link tf
   -- TODO: finding the right pair of session tfs
   -- is the responsibility of the config parser
   -- the goal is to compute each router's node tf concurrently with lazy evaluation
   -- e.g., a link tf is only computed when the network tf requires
   -- cannot remove null route, as it is still compared with other link tf!
   toLinkProtoTf ::
-       (Route (RouteType a)) => SessionFPair a -> LinkProtoTf (RouteType a)
-  toLinkProtoTf (sfe, sfi@(ssi, _)) = LinkProtoTf l (ProtoTf pLTf)
+       (Route (RouteType a)) => [RouterId] -> SessionFPair a -> LinkProtoTf (RouteType a)
+  toLinkProtoTf intRs (sfe, sfi@(ssi, _)) = LinkProtoTf l (ProtoTf pLTf)
     where
-      sTfe = toSimpleSsProtoTf sfe
-      sTfi = toSimpleSsProtoTf sfi
+      sTfe = toSimpleSsProtoTf intRs sfe
+      sTfi = toSimpleSsProtoTf intRs sfi
       l = Link (ssSrc ssi) (ssDst ssi)
       pLTf = mapMaybe concatPTfClauses (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
             -- product 2 session proto tf clauses, but if the first clause is null route,

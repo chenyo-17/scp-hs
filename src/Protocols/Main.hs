@@ -19,6 +19,7 @@ mainSimple condOutPath = do
   putStrLn ""
   -- all export funcs are empty
   -- TODO: automate this
+  let intRouters = [0, 1, 2]
   let sf3Export0 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
   let sf0Export1 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
   let sf1Export0 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
@@ -84,12 +85,12 @@ mainSimple condOutPath = do
   let sfPair12 = (sfExport2To1, sfImport1From2)
   let sfPair21 = (sfExport1To2, sfImport2From1)
   let sfPair24 = (sfExport4To2, sfImport2From4)
-  let lPTf03 = toLinkProtoTf sfPair03
-  let lPTf01 = toLinkProtoTf sfPair01
-  let lPTf10 = toLinkProtoTf sfPair10
-  let lPTf12 = toLinkProtoTf sfPair12
-  let lPTf21 = toLinkProtoTf sfPair21
-  let lPTf24 = toLinkProtoTf sfPair24
+  let lPTf03 = toLinkProtoTf intRouters sfPair03
+  let lPTf01 = toLinkProtoTf intRouters sfPair01
+  let lPTf10 = toLinkProtoTf intRouters sfPair10
+  let lPTf12 = toLinkProtoTf intRouters sfPair12
+  let lPTf21 = toLinkProtoTf intRouters sfPair21
+  let lPTf24 = toLinkProtoTf intRouters sfPair24
   print lPTf03
   print lPTf01
   print lPTf10
@@ -111,9 +112,11 @@ mainSimple condOutPath = do
   --       ]
   -- print myAssign
   -- print $ unwrapAssign myAssign
-  let specs = [RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50"))]
+  let specs =
+        SItem (RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50")))
+  let assumps = STrue
   putStrLn $ "Spec: \n" ++ show specs
-  let specCond = toSpecCond netTf specs
+  let specCond = toSpecCond netTf assumps specs
   writeListToFile condOutPath specCond
   -- specCond <- toSpecCond netTf specs
   -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
@@ -121,6 +124,9 @@ mainSimple condOutPath = do
 mainBgp :: FilePath -> IO ()
 mainBgp condOutPath = do
   putStrLn ""
+  -- FIXME: this is an ugly API!
+  -- maybe use a global state?
+  let intRouters = [1, 2]
   let ip1 = ipPrefix "0.0.0.16/28"
   let ip2 = ipPrefix "0.0.0.32/28"
   let pl1 = [ip1, ip2]
@@ -139,25 +145,25 @@ mainBgp condOutPath = do
   let rmItem8 = toRmItem BgpPermit [] [SetBgpNextHop ip6]
   let rm2Import1 = toBgpRm [rmItem7, rmItem8]
   -- (2, 1)
-  let rmItem5 = toRmItem BgpPermit [MatchBgpIpPrefix pl2] [SetCommunity 2001]
-  let rmItem6 = toRmItem BgpPermit [MatchCommunity cl2] [SetLocalPref 200]
+  let rmItem5 = toRmItem BgpPermit [MatchBgpIpPrefix pl2] [SetLocalPref 50]
+  let rmItem6 = toRmItem BgpPermit [] []
   let rm2Export1 = toBgpRm [rmItem5, rmItem6]
-  let rmItem3 = toRmItem BgpPermit [MatchCommunity cl1] [SetLocalPref 100]
+  let rmItem3 = toRmItem BgpDeny [MatchCommunity cl2] []
   let rmItem4 = toRmItem BgpPermit [] [SetBgpNextHop ip3]
   let rm1Import2 = toBgpRm [rmItem3, rmItem4]
   -- (3, 1)
-  let rmItem9 = toRmItem BgpDeny [MatchBgpIpPrefix [ip1]] []
-  let rmItem10 = toRmItem BgpPermit [MatchBgpIpPrefix [ip2]] [SetLocalPref 250]
-  let rm3Export1 = toBgpRm [rmItem9, rmItem10]
+  let rmItem9 = toRmItem BgpDeny [MatchCommunity [2001, 1001]] []
+  let rmItem10 = toRmItem BgpPermit [] [SetLocalPref 250]
+  let rm1Import3 = toBgpRm [rmItem9, rmItem10]
   -- TODO: any deny and permit needs to be declared explicitly
   let rmItem11 = toRmItem BgpPermit [] []
-  let rm1Import3 = toBgpRm [rmItem11]
+  let rm3Export1 = toBgpRm [rmItem11]
   -- (3, 2)
   let rmItem12 = toRmItem BgpDeny [MatchBgpIpPrefix [ip4]] []
-  let rmItem13 = toRmItem BgpPermit [MatchBgpIpPrefix [ip5]] [SetLocalPref 50]
-  let rm3Export2 = toBgpRm [rmItem12, rmItem13]
+  let rmItem13 = toRmItem BgpPermit [] [SetLocalPref 50]
+  let rm2Import3 = toBgpRm [rmItem12, rmItem13]
   let rmItem14 = toRmItem BgpPermit [] []
-  let rm2Import3 = toBgpRm [rmItem14]
+  let rm3Export2 = toBgpRm [rmItem14]
   -- print BGP rms
   putStrLn $ "BGPrm 1->2:\n" ++ show rm1Export2
   putStrLn $ "BGPrm 2<-1:\n" ++ show rm2Import1
@@ -181,20 +187,20 @@ mainBgp condOutPath = do
   let sfPair21 = (sfExport1To2, sfImport2From1)
   let sfPair13 = (sfExport3To1, sfImport1From3)
   let sfPair23 = (sfExport3To2, sfImport2From3)
-  let lPTf12 = toLinkProtoTf sfPair12
-  let lPTf21 = toLinkProtoTf sfPair21
-  let lPTf13 = toLinkProtoTf sfPair13
-  let lPTf23 = toLinkProtoTf sfPair23
+  let lPTf12 = toLinkProtoTf intRouters sfPair12
+  let lPTf21 = toLinkProtoTf intRouters sfPair21
+  let lPTf13 = toLinkProtoTf intRouters sfPair13
+  let lPTf23 = toLinkProtoTf intRouters sfPair23
   -- -- print session tfs
-  print (toSimpleSsProtoTf sfExport2To1)
-  print (toSimpleSsProtoTf sfImport1From2)
-  print (toSimpleSsProtoTf sfExport1To2)
-  print (toSimpleSsProtoTf sfImport2From1)
-  print (toSimpleSsProtoTf sfExport3To1)
-  print (toSimpleSsProtoTf sfImport1From3)
-  print (toSimpleSsProtoTf sfExport3To2)
-  print (toSimpleSsProtoTf sfImport2From3)
-  -- print link tfs
+  -- print (toSimpleSsProtoTf sfExport2To1)
+  -- print (toSimpleSsProtoTf intRouters sfImport1From2)
+  -- print (toSimpleSsProtoTf sfExport1To2)
+  -- print (toSimpleSsProtoTf intRouters sfImport2From1)
+  -- print (toSimpleSsProtoTf sfExport3To1)
+  -- print (toSimpleSsProtoTf intRouters sfImport1From3)
+  -- print (toSimpleSsProtoTf sfExport3To2)
+  -- print (toSimpleSsProtoTf intRouters sfImport2From3)
+  -- -- print link tfs
   print lPTf21
   print lPTf12
   print lPTf13
@@ -202,19 +208,31 @@ mainBgp condOutPath = do
   -- print router tfs
   let rTf1 = toRouterProtoTf [lPTf12, lPTf13]
   let rTf2 = toRouterProtoTf [lPTf21, lPTf23]
-  print rTf1
-  print rTf2
+  -- print rTf1
+  -- print rTf2
   -- print network tfs
   let netTf = toNetProtoTf [rTf1, rTf2]
   -- print netTf
   -- let fpCond = toNetFpCond [rTf1, rTf2]
   -- putStrLn $ "net fp cond:\n" ++ showConds fpCond
-  let specs = [RouterState (toAttrSpec LocalPref (Router 1) TfGe (Const "200"))]
+  let specs =
+        SpecAnd
+          (SItem
+             (RouterState
+                (toAttrSpec BgpIpPrefix (Router 1) TfEq (Const "0.0.0.16/28"))))
+          (SItem
+             (RouterState
+                (toAttrSpec BgpIpPrefix (Router 2) TfEq (Const "0.0.0.16/28"))))
+  -- let assumps = STrue
+  let assumps =
+        SItem
+          (RouterState
+             (toAttrSpec BgpIpPrefix (Router 3) TfEq (Const "0.0.0.16/28")))
+  putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
   putStrLn $ "Spec: \n" ++ show specs
-  let specCond = toSpecCond netTf specs
+  let specCond = toSpecCond netTf assumps specs
   writeListToFile condOutPath specCond
   -- specCond <- toSpecCond netTf specs
-  -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
 
 main :: IO ()
 main = do

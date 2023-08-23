@@ -1,6 +1,6 @@
 # cython: language_level=3
 from sympy.parsing.sympy_parser import parse_expr
-from sympy import pretty
+from sympy import pretty, to_dnf, to_cnf
 # read constraint strings from the given file
 # simplify each line and write to the output file concurrently
 def simplify_condition(input_file, output_file):
