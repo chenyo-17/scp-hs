@@ -201,10 +201,10 @@ mainBgp condOutPath = do
   -- print (toSimpleSsProtoTf sfExport3To2)
   -- print (toSimpleSsProtoTf intRouters sfImport2From3)
   -- -- print link tfs
-  print lPTf21
-  print lPTf12
-  print lPTf13
-  print lPTf23
+  -- print lPTf21
+  -- print lPTf12
+  -- print lPTf13
+  -- print lPTf23
   -- print router tfs
   let rTf1 = toRouterProtoTf [lPTf12, lPTf13]
   let rTf2 = toRouterProtoTf [lPTf21, lPTf23]
@@ -223,11 +223,11 @@ mainBgp condOutPath = do
           (SItem
              (RouterState
                 (toAttrSpec BgpIpPrefix (Router 2) TfEq (Const "0.0.0.16/28"))))
-  -- let assumps = STrue
-  let assumps =
-        SItem
-          (RouterState
-             (toAttrSpec BgpIpPrefix (Router 3) TfEq (Const "0.0.0.16/28")))
+  let assumps = STrue
+  -- let assumps =
+  --       SItem
+  --         (RouterState
+  --            (toAttrSpec BgpIpPrefix (Router 3) TfEq (Const "0.0.0.16/28")))
   putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond netTf assumps specs

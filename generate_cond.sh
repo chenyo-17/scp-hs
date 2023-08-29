@@ -7,7 +7,7 @@ if [ ! -f scp-hs.cabal ]; then
 fi
 
 # compile cython code
-pipenv run python setup.py build_ext --inplace
+pipenv run python setup.py build_ext --inplace > /dev/null
 
 # check the output argument is provided
 # if not, use default output file name
@@ -29,6 +29,6 @@ cabal run protocol -- $HS_COND | tee $HS_OUT
 pipenv run python -c "from simplify import simplify_condition; simplify_condition('$HS_COND', '$1')"
 
 # show the result
-echo ""
-echo "Conditions that satisfy the spec:"
-cat $1
+echo "" | tee -a $HS_OUT
+echo "Conditions that satisfy the spec:" | tee -a $HS_OUT
+cat $1 | tee -a $HS_OUT

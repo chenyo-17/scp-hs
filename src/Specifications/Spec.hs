@@ -2,6 +2,7 @@
 
 module Specifications.Spec where
 
+import           Data.Maybe
 import           Functions.Transfer
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
@@ -82,19 +83,23 @@ specToCond STrue = TfTrue
 -- the spec is satisfied while assumption holds,
 -- the condition only contains environmental variables,
 -- e.g., variables that are not assigned in the tf
--- this function first add the spec condition to each tf clause condition,
--- then concat the condition and the assign and simplify it
--- finally, Or all the conditions
-toSpecCond :: NetProtoTf -> Assump -> Spec -> TfCondition
-toSpecCond (NetProtoTf (Tf nTfCs)) assump spec =
-  simplifyCond
-  -- assume assumptions only contain environmental variables
-  -- so no need to be substituted
-    (TfAnd assumpCond (foldr (TfOr . stepClause) TfFalse nTfCs))
+-- this function first add the negated spec and the assumption to each tf clause condition,
+-- then concat the condition and the assign, eliminate internal variables,
+-- and finally simplify the condition
+toSpecCond :: NetProtoTf -> Assump -> Spec -> [TfCondition]
+toSpecCond (NetProtoTf (Tf nTfCs)) assump spec = mapMaybe stepClause nTfCs
   where
-    specCond = (simplifyCond . specToCond) spec
-    assumpCond = (simplifyCond . specToCond) assump
-    stepClause :: TfClause -> TfCondition
-    stepClause tfC@(TfClause _ assign)
-      -- negate spec
-     = substCond (TfAnd (clauseToTfCond tfC) specCond) assign
+    specCond = specToCond spec
+    -- assume assump only contain environmental variables
+    assumpCond = specToCond assump
+    stepClause :: TfClause -> Maybe TfCondition
+    stepClause tfC@(TfClause _ assign) =
+      case newCond of
+        TfFalse -> Nothing
+        _       -> Just newCond
+      where
+        newCond =
+          simplifyCond
+            $ TfAnd
+                assumpCond
+                (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)
