@@ -143,11 +143,11 @@ mainBgp2 condOutPath getVio = do
   -- prov1 --> 1
   let rmProv1Exp1 = permitAll
   let rm1ImpProv1 =
-        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 0]]
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 150, SetCommunity 0]]
   -- prov2 --> 2
   let rmProv2Exp2 = permitAll
   let rm2ImpProv2 =
-        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 150, SetCommunity 0]]
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 0]]
   -- 1 --> cust_o
   let rm1ExpCusto = toBgpRm [toRmItem BgpPermit [MatchCommunity [22]] []]
   let rmCustoImp1 = permitAll
@@ -203,13 +203,13 @@ mainBgp2 condOutPath getVio = do
   let lTfCusto1 = toLinkProtoTf intRouters linkCusto1
   -- router tfs
   let rTf1 = toRouterProtoTf [lTf1Cust, lTf1Prov1, lTf13]
-  print rTf1
+  -- print rTf1
   let rTf2 = toRouterProtoTf [lTf2Prov2, lTf23]
-  print rTf2
+  -- print rTf2
   let rTf3 = toRouterProtoTf [lTf31, lTf32]
-  print rTf3
+  -- print rTf3
   let rTfCusto = toRouterProtoTf [lTfCusto1]
-  print rTfCusto
+  -- print rTfCusto
   -- network tfs
   let netTf = toNetProtoTf [rTf3, rTf1, rTf2, rTfCusto]
   -- print netTf
