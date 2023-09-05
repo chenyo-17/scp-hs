@@ -19,11 +19,12 @@ data BgpRoute = BgpRoute
   -- they are used to include protocol internal logic,
   -- e.g., no send back
   , bgpFrom     :: Maybe RouterId
+  , bgpOrigin   :: Maybe Word32
   } deriving (Eq)
 
 -- routerId 0 is reserved for default route
 defaultBgpRoute :: BgpRoute
-defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing Nothing
+defaultBgpRoute = BgpRoute Nothing Nothing Nothing Nothing Nothing Nothing
 
 data BgpAttr
   = LocalPref
@@ -31,6 +32,7 @@ data BgpAttr
   | Community
   | BgpIpPrefix
   | BgpFrom
+  | BgpOrigin
   deriving (Show, Eq)
 
 type BgpCommunity = Word32
@@ -92,6 +94,7 @@ bgpAttrToString attr =
     Community   -> "Community"
     BgpIpPrefix -> "BgpIpPrefix"
     BgpFrom     -> "BgpFrom"
+    BgpOrigin   -> "BgpOrigin"
 
 -- user constructor API for RmItem
 toRmItem :: BgpAction -> [BgpMatch] -> [BgpSet] -> RmItem
@@ -154,6 +157,7 @@ bgpStrToAttrValExpr Community c = (TfConst . TfInt) (read c :: Word32)
 bgpStrToAttrValExpr BgpIpPrefix ipP =
   (TfConst . TfInt . fst . toIpRangew) (read ipP :: IpPrefix)
 bgpStrToAttrValExpr BgpFrom fr = (TfConst . TfInt) (read fr :: Word32)
+bgpStrToAttrValExpr BgpOrigin o = (TfConst . TfInt) (read o :: Word32)
 
 -- convert a BgpRoute to a TfAssign
 -- all attributes must be covered,
@@ -165,19 +169,27 @@ bgpRouteToAssign Nothing = toNullBgpAssign
     toNullBgpAssign :: TfAssign
     toNullBgpAssign =
       TfAssign
-        [nullLocalPref, nullIpPrefix, nullFrom, nullNextHop, nullCommunity]
+        [ nullLocalPref
+        , nullIpPrefix
+        , nullFrom
+        , nullNextHop
+        , nullCommunity
+        , nullOrigin
+        ]
       where
         nullLocalPref = TfAssignItem (attrToTfExpr LocalPref) (TfConst TfNull)
         nullIpPrefix = TfAssignItem (attrToTfExpr BgpIpPrefix) (TfConst TfNull)
         nullFrom = TfAssignItem (attrToTfExpr BgpFrom) (TfConst TfNull)
         nullNextHop = TfAssignItem (attrToTfExpr BgpNextHop) (TfConst TfNull)
         nullCommunity = TfAssignItem (attrToTfExpr Community) (TfConst TfNull)
+        nullOrigin = TfAssignItem (attrToTfExpr BgpOrigin) (TfConst TfNull)
 bgpRouteToAssign (Just rte) =
   (fromBgpFrom
      . fromLocalPref
      . fromBgpNextHop
      . fromBgpCommunity
-     . fromIpPrefix)
+     . fromIpPrefix
+     . fromBgpOrigin)
     (TfAssign [])
   where
     -- FIXME: this is ugly
@@ -220,6 +232,13 @@ bgpRouteToAssign (Just rte) =
         Just fr -> addTfAssignItem bgpFromVar (TfConst (TfInt fr)) ass
       where
         bgpFromVar = attrToTfExpr BgpFrom
+    fromBgpOrigin :: TfAssign -> TfAssign
+    fromBgpOrigin ass =
+      case bgpOrigin rte of
+        Nothing -> addTfAssignItem bgpOriginVar bgpOriginVar ass
+        Just o  -> addTfAssignItem bgpOriginVar (TfConst (TfInt o)) ass
+      where
+        bgpOriginVar = attrToTfExpr BgpOrigin
 
 -- update first route's attributes with the second route
 -- if they update the same attribute
@@ -232,6 +251,7 @@ updateBgpRoute rte1 rte2 =
     , community = updateMaybe (community rte1) (community rte2)
     , bgpIpPrefix = updateMaybe (bgpIpPrefix rte1) (bgpIpPrefix rte2)
     , bgpFrom = updateMaybe (bgpFrom rte1) (bgpFrom rte2)
+    , bgpOrigin = updateMaybe (bgpOrigin rte1) (bgpOrigin rte2)
     }
   where
     updateMaybe :: Maybe a -> Maybe a -> Maybe a
@@ -393,6 +413,7 @@ instance Show BgpRoute
       , showJust (show Community) (community r)
       , showJust (show LocalPref) (localPref r)
       , showJust (show BgpFrom) (bgpFrom r)
+      , showJust (show BgpOrigin) (bgpOrigin r)
       ]
     where
       showJust :: Show a => String -> Maybe a -> Maybe String

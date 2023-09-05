@@ -46,6 +46,7 @@ data TfCondition
   | TfNot TfCondition
   | TfAnd TfCondition TfCondition
   | TfOr TfCondition TfCondition
+  | TfImply TfCondition TfCondition
   deriving (Eq)
 
 -- the key is TfVar
@@ -208,22 +209,25 @@ simplifyCond cond =
           TfLe -> TfTrue
           TfGt -> TfFalse
           TfLt -> TfFalse
-    TfCond (TfConst TfNull) op _ ->
-      case op of
-        TfEq -> TfFalse
-        TfNe -> TfTrue
-        TfGe -> TfFalse
-        TfLe -> TfTrue
-        TfGt -> TfFalse
-        TfLt -> TfTrue
-    TfCond _ op (TfConst TfNull) ->
-      case op of
-        TfEq -> TfFalse
-        TfNe -> TfTrue
-        TfGe -> TfTrue
-        TfLe -> TfFalse
-        TfGt -> TfTrue
-        TfLt -> TfFalse
+    TfCond (TfConst TfNull) op e2 ->
+      case (op, e2) of
+        -- cannot compare Null with a variable
+        (TfEq, TfConst _) -> TfFalse
+        (TfNe, TfConst _) -> TfTrue
+        (TfGe, TfConst _) -> TfFalse
+        (TfLe, _)         -> TfTrue
+        (TfGt, _)         -> TfFalse
+        (TfLt, TfConst _) -> TfTrue
+        _                 -> cond
+    TfCond e1 op (TfConst TfNull) ->
+      case (e1, op) of
+        (TfConst _, TfEq) -> TfFalse
+        (TfConst _, TfNe) -> TfTrue
+        (_, TfGe)         -> TfTrue
+        (TfConst _, TfLe) -> TfFalse
+        (TfConst _, TfGt) -> TfTrue
+        (_, TfLt)         -> TfFalse
+        _                 -> cond
     TfCond (TfAdd (TfConst (TfInt i1)) (TfConst (TfInt i2))) op e2 ->
       case op of
         TfEq -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfEq e2
@@ -232,6 +236,7 @@ simplifyCond cond =
         TfLe -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfLe e2
         TfGt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfGt e2
         TfLt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfLt e2
+    TfImply c1 c2 -> simplifyCond $ TfOr (TfNot c1) (TfAnd c1 c2)
     _ -> cond
 
 -- substitute the variable in the condition with the assign
@@ -257,6 +262,7 @@ substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
         TfNot c -> TfNot $ substEach a c
         TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
         TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+        TfImply c1 c2 -> TfImply (substEach a c1) (substEach a c2)
         _ -> cond'
     -- the key in an tfAssign must be a var
     substEach _ cond' = cond'
@@ -305,6 +311,7 @@ appendCondVar str cond =
     TfNot c         -> TfNot $ appendCondVar str c
     TfAnd c1 c2     -> TfAnd (appendCondVar str c1) (appendCondVar str c2)
     TfOr c1 c2      -> TfOr (appendCondVar str c1) (appendCondVar str c2)
+    TfImply c1 c2   -> TfImply (appendCondVar str c1) (appendCondVar str c2)
     _               -> cond
 
 -- append a suffix to all values in the assign
@@ -412,6 +419,7 @@ instance Show TfCondition where
       TfNot c -> "not " ++ "(" ++ show c ++ ")"
       TfAnd c1 c2 -> "(" ++ show c1 ++ ")" ++ " & " ++ "(" ++ show c2 ++ ")"
       TfOr c1 c2 -> "(" ++ show c1 ++ ")" ++ " | " ++ "(" ++ show c2 ++ ")"
+      TfImply c1 c2 -> "(" ++ show c1 ++ ")" ++ " => " ++ "(" ++ show c2 ++ ")"
 
 instance Show TfAssignItem where
   show (TfAssignItem e1 e2) = show e1 ++ " := " ++ show e2

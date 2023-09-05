@@ -22,13 +22,16 @@ data Spec
   = SItem SpecItem
   | SpecAnd Spec Spec
   | SpecOr Spec Spec
+  | SpecImply Spec Spec
   | STrue -- no specification or assumption
 
 instance Show Spec where
-  show (SItem specItem)      = show specItem
+  show (SItem specItem) = show specItem
   show (SpecAnd spec1 spec2) = "(" ++ show spec1 ++ ") & (" ++ show spec2 ++ ")"
-  show (SpecOr spec1 spec2)  = "(" ++ show spec1 ++ ") | (" ++ show spec2 ++ ")"
-  show STrue                 = "True"
+  show (SpecOr spec1 spec2) = "(" ++ show spec1 ++ ") | (" ++ show spec2 ++ ")"
+  show (SpecImply spec1 spec2) =
+    "(" ++ show spec1 ++ ") => (" ++ show spec2 ++ ")"
+  show STrue = "True"
 
 -- FIXME: assumptions should be about routes,
 -- but here it is state of routers
@@ -76,6 +79,8 @@ specToCond :: Spec -> TfCondition
 specToCond (SItem (RouterState attrSpec)) = attrSpecToCond attrSpec
 specToCond (SpecAnd spec1 spec2) = TfAnd (specToCond spec1) (specToCond spec2)
 specToCond (SpecOr spec1 spec2) = TfOr (specToCond spec1) (specToCond spec2)
+specToCond (SpecImply spec1 spec2) =
+  TfOr (TfNot (specToCond spec1)) (TfAnd (specToCond spec1) (specToCond spec2))
 specToCond STrue = TfTrue
 
 -- given a net proto tf, a spec and an assumption,
@@ -83,14 +88,15 @@ specToCond STrue = TfTrue
 -- the spec is satisfied while assumption holds,
 -- the condition only contains environmental variables,
 -- e.g., variables that are not assigned in the tf
--- this function first add the negated spec and the assumption to each tf clause condition,
+-- this function first add the (negated, if the last bool argument is true) spec
+-- and the assumption to each tf clause condition,
 -- then concat the condition and the assign, eliminate internal variables,
 -- and finally simplify the condition
-toSpecCond :: NetProtoTf -> Assump -> Spec -> [TfCondition]
-toSpecCond (NetProtoTf (Tf nTfCs)) assump spec = mapMaybe stepClause nTfCs
+toSpecCond :: NetProtoTf -> Spec -> Spec -> Bool -> [TfCondition]
+toSpecCond (NetProtoTf (Tf nTfCs)) assump spec getVio =
+  mapMaybe stepClause nTfCs
   where
     specCond = specToCond spec
-    -- assume assump only contain environmental variables
     assumpCond = specToCond assump
     stepClause :: TfClause -> Maybe TfCondition
     stepClause tfC@(TfClause _ assign) =
@@ -99,7 +105,14 @@ toSpecCond (NetProtoTf (Tf nTfCs)) assump spec = mapMaybe stepClause nTfCs
         _       -> Just newCond
       where
         newCond =
-          simplifyCond
-            $ TfAnd
-                assumpCond
-                (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)
+          if getVio
+            then simplifyCond
+                   $ TfAnd
+                       assumpCond
+                       (substCond
+                          (TfAnd (clauseToTfCond tfC) (TfNot specCond))
+                          assign)
+            else simplifyCond
+                   $ TfAnd
+                       assumpCond
+                       (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)

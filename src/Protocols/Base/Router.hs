@@ -95,6 +95,8 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
 -- if all link tf exists null tf clauses, concat them
 toRouterNullTf :: Route a => [LinkProtoTf a] -> [TfClause]
 toRouterNullTf [] = []
+-- if there is only one link tf, no need to concat
+toRouterNullTf [_] = []
 -- use foldr because once it returns [], it will directly return
 -- use a dummy initial list
 toRouterNullTf lPTfs = foldr prodNullTfCs [TfClause TfFalse TfAssignNull] lPTfs

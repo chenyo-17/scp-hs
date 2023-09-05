@@ -71,6 +71,10 @@ toSBVCond cond = snd <$> toSBVCond' Map.empty cond
       (newDict, se1) <- toSBVExpr dict e1
       (newDict', se2) <- toSBVExpr newDict e2
       return (newDict', applyOp op se1 se2)
+    toSBVCond' dict (TfImply c1 c2) = do
+      (newDict, sc1) <- toSBVCond' dict c1
+      (newDict', sc2) <- toSBVCond' newDict c2
+      return (newDict', sNot sc1 .|| (sc1 .&& sc2))
 
 simplifyCondWithSolver :: TfCondition -> IO TfCondition
 simplifyCondWithSolver TfFalse = return TfFalse
