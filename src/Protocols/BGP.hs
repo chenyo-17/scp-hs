@@ -333,13 +333,14 @@ preferFstBgpCond _ ass1 ass2
   -- e.g., no send back
   | otherwise =
     TfOr
-      (TfNot sameIpPrefix)
+      notSameIpPrefix  -- not same prefix, and the current prefix is not null
       (TfAnd
          sameIpPrefix
          (TfOr largerLocalPref (TfAnd sameLocalPref largerFrom)))
   -- prefer lower lp, and then larger from (to prefer external route later)
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
+    notSameIpPrefix = TfAnd (TfNot sameIpPrefix) (TfCond (getIpPrefix ass1) TfNe (TfConst TfNull))
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
     sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
     largerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)

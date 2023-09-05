@@ -211,8 +211,9 @@ mainBgp2 condOutPath getVio = do
   let rTfCusto = toRouterProtoTf [lTfCusto1]
   print rTfCusto
   -- network tfs
-  let netTf = toNetProtoTf [rTf1, rTf2, rTf3, rTfCusto]
+  let netTf = toNetProtoTf [rTf3, rTf1, rTf2, rTfCusto]
   -- print netTf
+  -- get the last clause of netTf
   -- assumps: each external router has a unique BgpOrigin
   let assumps =
         SpecAnd

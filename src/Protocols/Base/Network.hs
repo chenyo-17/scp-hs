@@ -5,7 +5,7 @@ import           Functions.Transfer
 import           Protocols.Base.Router
 
 newtype NetProtoTf =
-  NetProtoTf Tf
+  NetProtoTf {nTf :: Tf}
   deriving (Eq)
 
 instance Show NetProtoTf where

@@ -29,5 +29,5 @@ cabal run protocol -- $HS_COND | tee $HS_OUT
 pipenv run python -c "from simplify import simplify_condition; simplify_condition('$HS_COND', '$1')"
 
 # show the result
-# echo "Final conditions:" | tee -a $HS_OUT
+echo "Final conditions:" | tee -a $HS_OUT
 cat $1 | tee -a $HS_OUT
