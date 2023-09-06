@@ -119,10 +119,9 @@ import           Utilities.Ip
 --   writeListToFile condOutPath specCond
 --   -- specCond <- toSpecCond netTf specs
 --   -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
-
 --   print netTf
-mainBgp2 :: FilePath -> Bool -> IO ()
-mainBgp2 condOutPath getVio = do
+mainBgp2 :: FilePath -> IO ()
+mainBgp2 condOutPath = do
   -- 1 -- cust(4), prov1(5)
   -- 2 -- prov2(6)
   -- 3 -- RR
@@ -143,11 +142,11 @@ mainBgp2 condOutPath getVio = do
   -- prov1 --> 1
   let rmProv1Exp1 = permitAll
   let rm1ImpProv1 =
-        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 150, SetCommunity 0]]
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 0]]
   -- prov2 --> 2
   let rmProv2Exp2 = permitAll
   let rm2ImpProv2 =
-        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 0]]
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 150, SetCommunity 0]]
   -- 1 --> cust_o
   let rm1ExpCusto = toBgpRm [toRmItem BgpPermit [MatchCommunity [22]] []]
   let rmCustoImp1 = permitAll
@@ -185,12 +184,14 @@ mainBgp2 condOutPath getVio = do
   let link2Prov2 =
         ((Session 6 Export 2, rmProv2Exp2), (Session 2 Import 6, rm2ImpProv2))
   let lTf2Prov2 = toLinkProtoTf intRouters link2Prov2
+--   print lTf2Prov2
   -- 1 <-- RR
   let link13 = ((Session 3 Export 1, rm3Exp1), (Session 1 Import 3, rm1Imp3))
   let lTf13 = toLinkProtoTf intRouters link13
   -- 2 <-- RR
   let link23 = ((Session 3 Export 2, rm3Exp2), (Session 2 Import 3, rm2Imp3))
   let lTf23 = toLinkProtoTf intRouters link23
+--   print lTf23
   -- RR <-- 1
   let link31 = ((Session 1 Export 3, rm1Exp3), (Session 3 Import 1, rm3Imp1))
   let lTf31 = toLinkProtoTf intRouters link31
@@ -203,49 +204,95 @@ mainBgp2 condOutPath getVio = do
   let lTfCusto1 = toLinkProtoTf intRouters linkCusto1
   -- router tfs
   let rTf1 = toRouterProtoTf [lTf1Cust, lTf1Prov1, lTf13]
-  -- print rTf1
+  print rTf1
   let rTf2 = toRouterProtoTf [lTf2Prov2, lTf23]
-  -- print rTf2
+  print rTf2
   let rTf3 = toRouterProtoTf [lTf31, lTf32]
-  -- print rTf3
+  print rTf3
   let rTfCusto = toRouterProtoTf [lTfCusto1]
-  -- print rTfCusto
+  print rTfCusto
   -- network tfs
   let netTf = toNetProtoTf [rTf3, rTf1, rTf2, rTfCusto]
-  -- print netTf
+--   print netTf
   -- get the last clause of netTf
   -- assumps: each external router has a unique BgpOrigin
   let assumps =
         SpecAnd
-          (SpecAnd
-             (SItem
-                (RouterState (toAttrSpec BgpOrigin (Router 4) TfEq (Const "4"))))
-             (SItem
-                (RouterState (toAttrSpec BgpOrigin (Router 5) TfEq (Const "5")))))
-          (SItem (RouterState (toAttrSpec BgpOrigin (Router 6) TfEq (Const "6"))))
-  -- spec: all routes imported from prov1 or prov2 must be exported to cust
-  -- all external neighbors announce the same prefix
-  let specs =
-        SpecImply
-          (SpecAnd
-             (SItem
-                (RouterState (toAttrSpec BgpIpPrefix (Router 4) TfEq (Router 5))))
-             (SItem
-                (RouterState (toAttrSpec BgpIpPrefix (Router 5) TfEq (Router 6)))))
+          (SItem
+             (RouterState
+                (toAttrSpec BgpIpPrefix (Symbol "p") TfNe (Symbol "null"))))
           (SpecOr
              (SItem
-                (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "5"))))
+                (RouterState
+                   (toAttrSpec BgpIpPrefix (Router 6) TfEq (Symbol "p"))))
              (SItem
-                (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "6")))))
+                (RouterState
+                   (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p")))))
+  putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
+  -- spec: all routes imported from prov1 or prov2 must be exported to cust
+  -- all external neighbors announce the same prefix
+  -- let specs =
+  --       SpecOr
+  --         (SItem
+  --            (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "4"))))
+  --         (SpecAnd
+  --            (SItem
+  --               (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "5"))))
+  --            (SItem
+                -- (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "6")))))
+  let specs =
+        SItem
+          (RouterState (toAttrSpec BgpIpPrefix (Router 7) TfEq (Symbol "p")))
   putStrLn $ "Spec: \n" ++ show specs
-  let specCond = toSpecCond netTf assumps specs getVio
+  let specCond = toSpecCond netTf assumps specs
   -- putStrLn $ unlines (map show specCond)
-  putStrLn
-    $ if getVio
-        then "\nComputing all violations:"
-        else "\nComputing all satisfiability:"
   writeListToFile condOutPath specCond
 
+--   let assumps = STrue
+--   let assumps = SpecOr (SItem (RouterState (toAttrSpec BgpIpPrefix (Router 6) TfEq (Symbol "null"))))
+--                        (SItem (RouterState (toAttrSpec BgpIpPrefix (Router 6) TfEq (Symbol "p"))))
+--   let assumps =
+--         SpecAnd
+--           (SItem
+--              (RouterState
+--                 (toAttrSpec BgpIpPrefix (Symbol "p") TfNe (Symbol "null"))))
+--           $ SpecAnd
+--               (SItem
+--                  (RouterState
+--                     (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p"))))
+--               (SpecAnd
+--                  (SpecOr
+--                     (SItem
+--                        (RouterState
+--                           (toAttrSpec BgpIpPrefix (Router 4) TfEq (Symbol "p"))))
+--                     (SItem
+--                        (RouterState
+--                           (toAttrSpec
+--                              BgpIpPrefix
+--                              (Router 4)
+--                              TfEq
+--                              (Symbol "null")))))
+--                  (SpecOr
+--                     (SItem
+--                        (RouterState
+--                           (toAttrSpec BgpIpPrefix (Router 6) TfEq (Symbol "p"))))
+--                     (SItem
+--                        (RouterState
+--                           (toAttrSpec
+--                              BgpIpPrefix
+--                              (Router 6)
+--                              TfEq
+--                              (Symbol "null"))))))
+--   print lTf1Cust
+--   print lTf1Prov1
+--   print lTf13
+--   let assumps = SpecAnd (SItem (RouterState (toAttrSpec BgpIpPrefix (Router 1) TfEq (Router 5))))
+--         (SpecAnd
+--           (SItem
+--              (RouterState (toAttrSpec BgpIpPrefix (Router 1) TfEq (Router 2))))
+--           (SItem
+--              (RouterState (toAttrSpec BgpIpPrefix (Router 2) TfEq (Router 3)))))
+--   putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
 --   putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
 --   print lTf1Cust
 --   print lTf1Prov1
@@ -379,4 +426,4 @@ mainBgp2 condOutPath getVio = do
 main :: IO ()
 main = do
   [condOutPath] <- getArgs
-  mainBgp2 condOutPath True
+  mainBgp2 condOutPath

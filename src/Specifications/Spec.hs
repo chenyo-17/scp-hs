@@ -41,11 +41,13 @@ type Assump = Spec
 data AttrCondExpr
   = Router RouterId
   | Const String -- this is protocol specific
+  | Symbol String
   deriving (Eq)
 
 instance Show AttrCondExpr where
   show (Router rId) = show rId
   show (Const s)    = s
+  show (Symbol s)   = s
 
 -- TODO: pre define normal spec, e.g., reachability
 data AttrSpec a = AttrSpec
@@ -73,6 +75,7 @@ attrSpecToCond (AttrSpec attr left op right) = TfCond leftExpr op rightExpr
             -- TODO: how to make sure it is consistent with appendAssignVar
         Router rId -> appendExprVar (show rId) (attrToTfExpr attr)
         Const s    -> strToAttrValExpr attr s
+        Symbol s   -> TfVar s
 
 -- convert a list of spec items to a tf condition
 specToCond :: Spec -> TfCondition
@@ -80,7 +83,7 @@ specToCond (SItem (RouterState attrSpec)) = attrSpecToCond attrSpec
 specToCond (SpecAnd spec1 spec2) = TfAnd (specToCond spec1) (specToCond spec2)
 specToCond (SpecOr spec1 spec2) = TfOr (specToCond spec1) (specToCond spec2)
 specToCond (SpecImply spec1 spec2) =
-  TfOr (TfNot (specToCond spec1)) (TfAnd (specToCond spec1) (specToCond spec2))
+  TfImply (specToCond spec1) (specToCond spec2)
 specToCond STrue = TfTrue
 
 -- given a net proto tf, a spec and an assumption,
@@ -92,9 +95,8 @@ specToCond STrue = TfTrue
 -- and the assumption to each tf clause condition,
 -- then concat the condition and the assign, eliminate internal variables,
 -- and finally simplify the condition
-toSpecCond :: NetProtoTf -> Spec -> Spec -> Bool -> [TfCondition]
-toSpecCond (NetProtoTf (Tf nTfCs)) assump spec getVio =
-  mapMaybe stepClause nTfCs
+toSpecCond :: NetProtoTf -> Spec -> Spec -> [TfCondition]
+toSpecCond (NetProtoTf (Tf nTfCs)) assump spec = mapMaybe stepClause nTfCs
   where
     specCond = specToCond spec
     assumpCond = specToCond assump
@@ -105,14 +107,7 @@ toSpecCond (NetProtoTf (Tf nTfCs)) assump spec getVio =
         _       -> Just newCond
       where
         newCond =
-          if getVio
-            then simplifyCond
-                   $ TfAnd
-                       assumpCond
-                       (substCond
-                          (TfAnd (clauseToTfCond tfC) (TfNot specCond))
-                          assign)
-            else simplifyCond
-                   $ TfAnd
-                       assumpCond
-                       (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)
+          simplifyCond
+            $ TfAnd
+                assumpCond
+                (substCond (TfAnd (clauseToTfCond tfC) specCond) assign)

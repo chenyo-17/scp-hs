@@ -32,7 +32,7 @@ data BgpAttr
   | Community
   | BgpIpPrefix
   | BgpFrom
-  | BgpOrigin
+  -- | BgpOrigin
   deriving (Show, Eq)
 
 type BgpCommunity = Word32
@@ -94,7 +94,7 @@ bgpAttrToString attr =
     Community   -> "Community"
     BgpIpPrefix -> "BgpIpPrefix"
     BgpFrom     -> "BgpFrom"
-    BgpOrigin   -> "BgpOrigin"
+    -- BgpOrigin   -> "BgpOrigin"
 
 -- user constructor API for RmItem
 toRmItem :: BgpAction -> [BgpMatch] -> [BgpSet] -> RmItem
@@ -157,8 +157,8 @@ bgpStrToAttrValExpr Community c = (TfConst . TfInt) (read c :: Word32)
 bgpStrToAttrValExpr BgpIpPrefix ipP =
   (TfConst . TfInt . fst . toIpRangew) (read ipP :: IpPrefix)
 bgpStrToAttrValExpr BgpFrom fr = (TfConst . TfInt) (read fr :: Word32)
-bgpStrToAttrValExpr BgpOrigin o = (TfConst . TfInt) (read o :: Word32)
 
+-- bgpStrToAttrValExpr BgpOrigin o = (TfConst . TfInt) (read o :: Word32)
 -- convert a BgpRoute to a TfAssign
 -- all attributes must be covered,
 -- if some attributes are not set, set it to the attribute var
@@ -174,7 +174,7 @@ bgpRouteToAssign Nothing = toNullBgpAssign
         , nullFrom
         , nullNextHop
         , nullCommunity
-        , nullOrigin
+        -- , nullOrigin
         ]
       where
         nullLocalPref = TfAssignItem (attrToTfExpr LocalPref) (TfConst TfNull)
@@ -182,14 +182,14 @@ bgpRouteToAssign Nothing = toNullBgpAssign
         nullFrom = TfAssignItem (attrToTfExpr BgpFrom) (TfConst TfNull)
         nullNextHop = TfAssignItem (attrToTfExpr BgpNextHop) (TfConst TfNull)
         nullCommunity = TfAssignItem (attrToTfExpr Community) (TfConst TfNull)
-        nullOrigin = TfAssignItem (attrToTfExpr BgpOrigin) (TfConst TfNull)
+        -- nullOrigin = TfAssignItem (attrToTfExpr BgpOrigin) (TfConst TfNull)
 bgpRouteToAssign (Just rte) =
   (fromBgpFrom
      . fromLocalPref
      . fromBgpNextHop
      . fromBgpCommunity
-     . fromIpPrefix
-     . fromBgpOrigin)
+     . fromIpPrefix)
+    --  . fromBgpOrigin)
     (TfAssign [])
   where
     -- FIXME: this is ugly
@@ -232,13 +232,13 @@ bgpRouteToAssign (Just rte) =
         Just fr -> addTfAssignItem bgpFromVar (TfConst (TfInt fr)) ass
       where
         bgpFromVar = attrToTfExpr BgpFrom
-    fromBgpOrigin :: TfAssign -> TfAssign
-    fromBgpOrigin ass =
-      case bgpOrigin rte of
-        Nothing -> addTfAssignItem bgpOriginVar bgpOriginVar ass
-        Just o  -> addTfAssignItem bgpOriginVar (TfConst (TfInt o)) ass
-      where
-        bgpOriginVar = attrToTfExpr BgpOrigin
+    -- fromBgpOrigin :: TfAssign -> TfAssign
+    -- fromBgpOrigin ass =
+    --   case bgpOrigin rte of
+    --     Nothing -> addTfAssignItem bgpOriginVar bgpOriginVar ass
+    --     Just o  -> addTfAssignItem bgpOriginVar (TfConst (TfInt o)) ass
+    --   where
+    --     bgpOriginVar = attrToTfExpr BgpOrigin
 
 -- update first route's attributes with the second route
 -- if they update the same attribute
@@ -333,14 +333,17 @@ preferFstBgpCond _ ass1 ass2
   -- e.g., no send back
   | otherwise =
     TfOr
-      notSameIpPrefix  -- not same prefix, and the current prefix is not null
+      notSameIpPrefix -- not same prefix, and the current prefix is not null
       (TfAnd
          sameIpPrefix
          (TfOr largerLocalPref (TfAnd sameLocalPref largerFrom)))
   -- prefer lower lp, and then larger from (to prefer external route later)
   where
     sameIpPrefix = TfCond (getIpPrefix ass1) TfEq (getIpPrefix ass2)
-    notSameIpPrefix = TfAnd (TfNot sameIpPrefix) (TfCond (getIpPrefix ass1) TfNe (TfConst TfNull))
+    notSameIpPrefix =
+      TfAnd
+        (TfNot sameIpPrefix)
+        (TfCond (getIpPrefix ass1) TfNe (TfConst TfNull))
     largerLocalPref = TfCond getLocalPref1 TfGt getLocalPref2
     sameLocalPref = TfCond getLocalPref1 TfEq getLocalPref2
     largerFrom = TfCond (getFrom ass1) TfGt (getFrom ass2)
@@ -414,7 +417,7 @@ instance Show BgpRoute
       , showJust (show Community) (community r)
       , showJust (show LocalPref) (localPref r)
       , showJust (show BgpFrom) (bgpFrom r)
-      , showJust (show BgpOrigin) (bgpOrigin r)
+      -- , showJust (show BgpOrigin) (bgpOrigin r)
       ]
     where
       showJust :: Show a => String -> Maybe a -> Maybe String

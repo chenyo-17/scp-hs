@@ -237,6 +237,7 @@ simplifyCond cond =
         TfGt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfGt e2
         TfLt -> simplifyCond $ TfCond (TfConst (TfInt (i1 + i2))) TfLt e2
     TfImply c1 c2 -> simplifyCond $ TfOr (TfNot c1) (TfAnd c1 c2)
+    TfNot (TfImply c1 c2) -> simplifyCond $ TfAnd c1 (TfNot c2)
     _ -> cond
 
 -- substitute the variable in the condition with the assign
@@ -247,7 +248,7 @@ substCond :: TfCondition -> TfAssign -> TfCondition
 -- then the new condition is always false
 substCond _ TfAssignNull = TfFalse
 -- not use map as it has sharing
-substCond cond (TfAssign as) = foldr substEach cond as
+substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
   where
     -- substitute all instances of v in cond
     substEach :: TfAssignItem -> TfCondition -> TfCondition
@@ -256,13 +257,13 @@ substCond cond (TfAssign as) = foldr substEach cond as
       case cond' of
         -- the variable can only appears in TfCond as a single var
         TfCond (TfVar v') op e2
-          | v == v' -> simplifyCond $ TfCond e op e2
+          | v == v' -> TfCond e op e2
         TfCond e1 op (TfVar v')
-          | v == v' -> simplifyCond $ TfCond e1 op e
-        TfNot c -> simplifyCond $ TfNot (substEach a c)
-        TfAnd c1 c2 -> simplifyCond $ TfAnd (substEach a c1) (substEach a c2)
-        TfOr c1 c2 -> simplifyCond $ TfOr (substEach a c1) (substEach a c2)
-        TfImply c1 c2 -> simplifyCond $ TfImply (substEach a c1) (substEach a c2)
+          | v == v' -> TfCond e1 op e
+        TfNot c -> TfNot (substEach a c)
+        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
+        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+        TfImply c1 c2 -> TfImply (substEach a c1) (substEach a c2)
         _ -> cond'
     -- the key in an tfAssign must be a var
     substEach _ cond' = cond'
