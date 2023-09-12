@@ -164,6 +164,7 @@ instance ProtocolTf SimpleFunc where
   type RouteType SimpleFunc = SimpleRoute
   -- this protocol does not care about internal/external routers
   toSsProtoTf _ (ss, sf) = SessionProtoTf ss (simpleFuncToProtoTf sf)
+  getDefault  = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
 
 instance Route SimpleRoute where
   preferFstCond = preferFstSimpleCond

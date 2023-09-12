@@ -373,11 +373,12 @@ instance ProtocolTf BgpRm where
         if sDir == Import
           -- if the dst is an internal router, deny the same bgp from to avoid loop
           then if sDst `elem` intRs
-                 then denySameBgpFrom sSrc (setBgpFrom sDst rm)
+                 then denySameBgpFrom (getOriginId sSrc) (setBgpFrom sDst rm)
                  else setBgpFrom sDst rm
           else rm
       -- only deny same BgpFrom if it is an internal router
       sTf = SessionProtoTf ss (bgpRmToProtoTf rm')
+  getDefault  = toBgpRm [toRmItem BgpPermit [] []]
 
 instance Route BgpRoute
   -- FIXME: some methods are required only because cannot know the attribute
@@ -396,6 +397,7 @@ instance Show BgpMatch where
 instance Show BgpSet where
   show (SetLocalPref lp)  = "set local-pref " ++ show lp
   show (SetBgpNextHop nh) = "set next-hop " ++ show nh
+  show (SetCommunity 0)   = "del community"
   show (SetCommunity c)   = "set community " ++ show c
   show (SetBgpFrom f)     = "set from " ++ show f
   show (SetIpPrefix ipP)  = "set ip-prefix " ++ show ipP

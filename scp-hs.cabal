@@ -71,6 +71,7 @@ library
         Utilities.Parallel
         Functions.Transfer
         Protocols.Simple
+        Configurations.Router
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -115,6 +116,7 @@ executable protocol
         Functions.Transfer
         Utilities.Parallel
         Utilities.Io
+        Configurations.Router
 
 -- test-suite scp-hs-test
 --     -- Import common warning flags.

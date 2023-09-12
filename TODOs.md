@@ -8,6 +8,4 @@
 
 -[] pretty printer as sympy
 
--[] remove bgpFrom for external routers
-
--[] pass a list of conditions and solve them concurrently and then merge the results
+-[] reduce the router function to a single symbolic prefix

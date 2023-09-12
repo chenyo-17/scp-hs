@@ -14,7 +14,6 @@ def simplify_condition(input_file, output_file):
     with ProcessPoolExecutor() as executor:
         simplified_exprs = list(executor.map(parse_and_simplify, lines))
 
-    # combined_expr = simplify(Or(*simplified_exprs))
 
     with open(output_file, 'w') as f:
         for expr in simplified_exprs:
