@@ -16,16 +16,16 @@ if [ "$#" -ne 1 ]; then
     echo "Using default output file: py-conds.txt"
     set -- "py-conds.txt"
     # use default output file name
-
 fi
 
 # generate intermediate haskell condition file
 # and also save the output to a file while printing to stdout
 HS_COND='hs-conds.txt'
 HS_OUT='hs-out.txt'
-cabal run protocol -- $HS_COND | tee $HS_OUT
+cabal run protocol -- $HS_COND +RTS -N16 | tee $HS_OUT
 
 # generate sympt condition file
+
 pipenv run python -c "from simplify import simplify_condition; simplify_condition('$HS_COND', '$1')"
 
 # show the result

@@ -2,10 +2,12 @@
 
 module Specifications.Spec where
 
+import           Control.Parallel.Strategies
 import           Data.Maybe
 import           Functions.Transfer
 import           Protocols.Base.Network
 import           Protocols.Base.Protocol
+import           Utilities.Parallel
 
 -- different types of spec
 -- TODO: add reachability
@@ -96,7 +98,8 @@ specToCond STrue = TfTrue
 -- then concat the condition and the assign, eliminate internal variables,
 -- and finally simplify the condition
 toSpecCond :: NetProtoTf -> Spec -> Spec -> [TfCondition]
-toSpecCond (NetProtoTf (Tf nTfCs)) assump spec = mapMaybe stepClause nTfCs
+toSpecCond (NetProtoTf (Tf nTfCs)) assump spec =
+  mapMaybe stepClause nTfCs `using` parListChunk chunkSize rpar
   where
     specCond = specToCond spec
     assumpCond = specToCond assump

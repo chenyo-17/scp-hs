@@ -7,9 +7,11 @@
 -- {-# LANGUAGE TypeFamilies            #-}
 module Protocols.Base.Protocol where
 
-import           Data.Maybe         (mapMaybe)
+import           Control.Parallel.Strategies
+import           Data.Maybe                  (mapMaybe)
 import           Data.Word
 import           Functions.Transfer
+import           Utilities.Parallel
 
 type RouterId = Word32
 
@@ -143,7 +145,8 @@ class Show a =>
   toSimpleSsProtoTf intRs sF = sPTf {ssTf = simplePTf}
     where
       sPTf = toSsProtoTf intRs sF
-      simplePTf = ProtoTf (mapMaybe simpleCond sPTfC)
+      simplePTf =
+        ProtoTf (mapMaybe simpleCond sPTfC `using` parListChunk chunkSize rpar)
         where
           sPTfC = pTfClauses (ssTf sPTf)
       simpleCond (ProtoTfClause cond route) =
@@ -174,7 +177,9 @@ toLinkProtoTf sTfe sTfi = LinkProtoTf l (ProtoTf pLTf)
   where
     ssi = session sTfi
     l = Link (ssSrc ssi) (ssDst ssi)
-    pLTf = mapMaybe concatPTfClauses (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
+    pLTf =
+      mapMaybe concatPTfClauses (prod2SsPTfs (ssTf sTfe) (ssTf sTfi))
+        `using` parListChunk chunkSize rpar
           -- product 2 session proto tf clauses, but if the first clause is null route,
           -- then pair it with Nothing
       where

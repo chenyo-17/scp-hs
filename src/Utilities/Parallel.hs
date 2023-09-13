@@ -1,4 +1,4 @@
 module Utilities.Parallel where 
 
 chunkSize :: Int
-chunkSize = 50
+chunkSize = 10

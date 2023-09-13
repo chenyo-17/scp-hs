@@ -1,9 +1,11 @@
 module Protocols.Base.Router where
 
-import           Data.List               (foldl')
-import           Data.Maybe              (mapMaybe)
+import           Control.Parallel.Strategies
+import           Data.List                   (foldl')
+import           Data.Maybe                  (mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Protocol
+import           Utilities.Parallel
 
 -- from router tf, the tf is no longer proto tf
 data RouterProtoTf = RouterProtoTf
@@ -28,8 +30,10 @@ toRouterProtoTf lTfs@(LinkProtoTf (Link src _) _:_) =
     -- only append assign var when the router f is final!
     -- otherwise cannot extract route attribute from assign
     routerTf =
-      map (\x -> x {tfAssign = appendAssignVar (show src) (tfAssign x)})
-        $ computeRouterTf lTfs
+      map
+        (\x -> x {tfAssign = appendAssignVar (show src) (tfAssign x)})
+        (computeRouterTf lTfs)
+        `using` parListChunk chunkSize rpar
     -- given the current Tf, and a list of link tfs,
     -- combine the head linkTf and each of the rest linkTfs and compute the new pTf clauses
     computeRouterTf :: Route a => [LinkProtoTf a] -> [TfClause]
@@ -108,7 +112,7 @@ toRouterNullTf lPTfs = foldr prodNullTfCs [TfClause TfFalse TfAssignNull] lPTfs
     prodNullTfCs :: Route a => LinkProtoTf a -> [TfClause] -> [TfClause]
     prodNullTfCs _ [] = []
     prodNullTfCs (LinkProtoTf (Link src dst) (ProtoTf pTfCs)) [TfClause TfFalse TfAssignNull] =
-      mapMaybe toNullTfClause pTfCs
+      mapMaybe toNullTfClause pTfCs `using` parListChunk chunkSize rpar
       where
         toNullTfClause :: Route a => ProtoTfClause a -> Maybe TfClause
         toNullTfClause (ProtoTfClause cond rte) =

@@ -437,3 +437,4 @@ instance Show TfClause where
 
 instance Show Tf where
   show (Tf clauses) = unlines $ map show clauses
+

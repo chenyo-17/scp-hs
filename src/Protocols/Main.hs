@@ -3,8 +3,11 @@ module Main
   ) where
 
 import           Configurations.Router
-import           Data.List               (foldl')
-import           Functions.Solver        (simplifyCondWithSolver)
+import           Control.Exception
+import           Control.Parallel.Strategies
+import           Data.List                   (foldl')
+import           Data.Time.Clock
+import           Functions.Solver            (simplifyCondWithSolver)
 import           Functions.Transfer
 import           Protocols.BGP
 import           Protocols.Base.Network
@@ -16,112 +19,148 @@ import           System.Environment
 import           Utilities.Io
 import           Utilities.Ip
 
--- mainSimple :: FilePath -> Bool -> IO ()
--- mainSimple condOutPath getVio = do
---   putStrLn ""
---   -- all export funcs are empty
---   -- TODO: automate this
---   let intRouters = [0, 1, 2]
---   let sf3Export0 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   let sf0Export1 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   let sf1Export0 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   let sf1Export2 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   let sf2Export1 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   let sf4Export2 = SimpleFunc [SimpleFuncBranch SimplePermit [] []]
---   -- 0 <- 3
---   let sf0Import3 =
---         SimpleFunc
---           [ SimpleFuncBranch
---               SimplePermit
---               []
---               [SetSimpleNextHop 3, AddSimpleWeight 10]
---           ]
---   -- 0 <- 1
---   let sf0Import1 =
---         SimpleFunc
---           [ SimpleFuncBranch SimpleDeny [MatchSimpleNextHop 0] []
---           , SimpleFuncBranch SimplePermit [] [SetSimpleNextHop 1]
---           ]
---   -- 1 <- 0
---   let sf1Import0 =
---         SimpleFunc
---           [ SimpleFuncBranch SimpleDeny [MatchSimpleNextHop 1] []
---           , SimpleFuncBranch SimplePermit [] [SetSimpleNextHop 0]
---           ]
---   -- 1 <- 2
---   let sf1Import2 =
---         SimpleFunc
---           [ SimpleFuncBranch SimpleDeny [MatchSimpleNextHop 1] []
---           , SimpleFuncBranch SimplePermit [] [SetSimpleNextHop 2]
---           ]
---   -- 2 <- 1
---   let sf2Import1 =
---         SimpleFunc
---           [ SimpleFuncBranch SimpleDeny [MatchSimpleNextHop 2] []
---           , SimpleFuncBranch SimplePermit [] [SetSimpleNextHop 1]
---           ]
---   -- 2 <- 4
---   let sf2Import4 =
---         SimpleFunc
---           [ SimpleFuncBranch
---               SimplePermit
---               []
---               [SetSimpleNextHop 4, SetSimpleWeight 50]
---           ]
---   -- print simple functions
---   let sfImport0From3 = (Session 0 Import 3, sf0Import3)
---   let sfImport1From0 = (Session 1 Import 0, sf1Import0)
---   let sfImport0From1 = (Session 0 Import 1, sf0Import1)
---   let sfImport2From1 = (Session 2 Import 1, sf2Import1)
---   let sfImport1From2 = (Session 1 Import 2, sf1Import2)
---   let sfImport2From4 = (Session 2 Import 4, sf2Import4)
---   let sfExport3To0 = (Session 3 Export 0, sf3Export0)
---   let sfExport0To1 = (Session 0 Export 1, sf0Export1)
---   let sfExport1To0 = (Session 1 Export 0, sf1Export0)
---   let sfExport1To2 = (Session 1 Export 2, sf1Export2)
---   let sfExport2To1 = (Session 2 Export 1, sf2Export1)
---   let sfExport4To2 = (Session 4 Export 2, sf4Export2)
---   let sfPair03 = (sfExport3To0, sfImport0From3)
---   let sfPair01 = (sfExport1To0, sfImport0From1)
---   let sfPair10 = (sfExport0To1, sfImport1From0)
---   let sfPair12 = (sfExport2To1, sfImport1From2)
---   let sfPair21 = (sfExport1To2, sfImport2From1)
---   let sfPair24 = (sfExport4To2, sfImport2From4)
---   let lPTf03 = toLinkProtoTf intRouters sfPair03
---   let lPTf01 = toLinkProtoTf intRouters sfPair01
---   let lPTf10 = toLinkProtoTf intRouters sfPair10
---   let lPTf12 = toLinkProtoTf intRouters sfPair12
---   let lPTf21 = toLinkProtoTf intRouters sfPair21
---   let lPTf24 = toLinkProtoTf intRouters sfPair24
---   print lPTf03
---   print lPTf01
---   print lPTf10
---   print lPTf12
---   print lPTf21
---   print lPTf24
---   let rTf0 = toRouterProtoTf [lPTf03, lPTf01]
---   let rTf1 = toRouterProtoTf [lPTf12, lPTf10]
---   let rTf2 = toRouterProtoTf [lPTf21, lPTf24]
---   print rTf0
---   print rTf1
---   print rTf2
---   let netTf = toNetProtoTf [rTf0, rTf1, rTf2]
---   -- let myAssign = TfAssign
---   --       [ TfAssignItem (TfVar "x") (TfVar "y")
---   --       , TfAssignItem (TfVar "z") (TfVar "x")
---   --       , TfAssignItem (TfVar "y") (TfAdd (TfVar "a1") (TfVar "10"))
---   --       ]
---   -- print myAssign
---   -- print $ unwrapAssign myAssign
---   let specs =
---         SItem (RouterState (AttrSpec SimpleWeight (Router 1) TfEq (Const "50")))
---   let assumps = STrue
---   putStrLn $ "Spec: \n" ++ show specs
---   let specCond = toSpecCond netTf assumps specs getVio
---   writeListToFile condOutPath specCond
---   -- specCond <- toSpecCond netTf specs
---   -- putStrLn $ "SpecCond: \n" ++ unlines (map show specCond)
+timePureFunction :: a -> IO (a, NominalDiffTime)
+timePureFunction f = do
+  start <- getCurrentTime
+  result <- evaluate f
+  end <- getCurrentTime
+  let diff = diffUTCTime end start
+  return (result, diff)
+
+evalAbilene :: FilePath -> IO ()
+evalAbilene condOutPath = do
+  let intRs = [1, 2, 5, 10, 11]
+  let extRs = [12 .. 15] -- 2 providers, 2 customers
+  -- 1 rr （5）
+  -- all routers are connected to rr
+  let conns =
+        [ (1, 5)
+        , (2, 5)
+        , (5, 11)
+        , (5, 10)
+        , (1, 12)
+        , (11, 13)
+        , (2, 14)
+        , (10, 15)
+        ]
+  let cust1_pl = [ipPrefix "0.0.0.12/28"]
+  let cust2_pl = [ipPrefix "0.0.0.13/28"]
+  -- cust1 -> 1
+  let rm1ImpCust1 =
+        toBgpRm
+          [ toRmItem
+              BgpPermit
+              [MatchBgpIpPrefix cust1_pl]
+              [SetLocalPref 1000, SetCommunity 12]
+          ]
+  -- cust2 -> 11
+  let rm11ImpCust2 =
+        toBgpRm
+          [ toRmItem
+              BgpPermit
+              [MatchBgpIpPrefix cust2_pl]
+              [SetLocalPref 1000, SetCommunity 13]
+          ]
+  -- prov1 --> 2
+  let rm2ImpProv1 =
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 14]]
+  -- prov2 --> 10
+  let rm10ImpProv2 =
+        toBgpRm [toRmItem BgpPermit [] [SetLocalPref 100, SetCommunity 15]]
+  -- 1 --> cust1_o
+  let rm1ExpCust1o =
+        toBgpRm [toRmItem BgpPermit [MatchCommunity [13, 14, 15]] []]
+  -- 11 --> cust2_o
+  let rm11ExpCust2o =
+        toBgpRm [toRmItem BgpPermit [MatchCommunity [12, 14, 15]] []]
+  -- 2 --> prov1_o
+  let rm2ExpProv1o = toBgpRm [toRmItem BgpPermit [MatchCommunity [12, 13]] []]
+  -- 10 --> prov2_o
+  let rm10ExpProv2o = toBgpRm [toRmItem BgpPermit [MatchCommunity [12, 13]] []]
+  -- print BGP rms
+  putStrLn $ "BGPrm R1<-cust1:\n" ++ show rm1ImpCust1
+  putStrLn $ "BGPrm R11<-cust2:\n" ++ show rm11ImpCust2
+  putStrLn $ "BGPrm R2<-prov1:\n" ++ show rm2ImpProv1
+  putStrLn $ "BGPrm R10<-prov2:\n" ++ show rm10ImpProv2
+  putStrLn $ "BGPrm R1->cust1:\n" ++ show rm1ExpCust1o
+  putStrLn $ "BGPrm R11->cust2:\n" ++ show rm11ExpCust2o
+  putStrLn $ "BGPrm R2->prov1:\n" ++ show rm2ExpProv1o
+  putStrLn $ "BGPrm R10->prov2:\n" ++ show rm10ExpProv2o
+  let allConfigs =
+        [ (Session 1 Import 12, rm1ImpCust1)
+        , (Session 11 Import 13, rm11ImpCust2)
+        , (Session 2 Import 14, rm2ImpProv1)
+        , (Session 10 Import 15, rm10ImpProv2)
+        , (Session 1 Export 12, rm1ExpCust1o)
+        , (Session 11 Export 13, rm11ExpCust2o)
+        , (Session 2 Export 14, rm2ExpProv1o)
+        , (Session 10 Export 15, rm10ExpProv2o)
+        ]
+  let ssTfs = foldl' (\acc (s, a) -> addRouterConfig intRs acc s a) [] allConfigs
+--   putStrLn $ "Time to add router configs: " ++ show elapsed
+      --   foldl' (\acc (s, a) -> addRouterConfig intRs acc s a) [] allConfigs
+--   putStrLn $ unlines (map show ssTfs)
+  -- use concurrency
+  let rTfs = parMap
+         rseq
+         (\rId -> toRouterTf rId intRs (getNbs conns rId) ssTfs)
+         (intRs ++ extRs)
+--   print rTfs
+--   putStrLn $ "Time to add router tfs: " ++ show elapsed
+  let netTf = toNetProtoTf rTfs
 --   print netTf
+--   print netTf
+--   putStrLn $ unlines (map show rTfs)
+--   (netTf, elapsed) <-
+--     timePureFunction (toNetProtoTf rTfs)
+--   putStrLn $ "Time to add network tfs: " ++ show elapsed
+  let assump1 =
+        SItem
+          (RouterState (toAttrSpec BgpIpPrefix (Router 15) TfEq (Symbol "p")))
+  let assump2 =
+        SItem
+          (RouterState (toAttrSpec BgpIpPrefix (Router 14) TfEq (Symbol "p")))
+  let assump3 =
+        SItem
+          (RouterState
+             (toAttrSpec BgpIpPrefix (Symbol "p") TfNe (Symbol "null")))
+  let assumps = SpecAnd assump3 (SpecOr assump1 assump2)
+  putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
+  let specs =
+        SItem
+          (RouterState
+             (toAttrSpec BgpNextHop (Router (getExtId 12)) TfEq (Symbol "p")))
+  putStrLn $ "Spec: \n" ++ show specs
+  let specCond = toSpecCond netTf assumps specs
+-- --   (specCond, elapsed) <-
+-- --     timePureFunction (toSpecCond netTf assumps specs)
+-- --   putStrLn $ "Time to add spec conditions: " ++ show elapsed
+  writeListToFile condOutPath specCond
+  -- let assump1 =
+  --       SItem
+  --         (RouterState (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p")))
+  -- let assump2 =
+  --       SItem
+  --         (RouterState (toAttrSpec BgpIpPrefix (Router 6) TfEq (Symbol "p")))
+  -- let assump3 =
+  --       SItem
+  --         (RouterState
+  --            (toAttrSpec BgpIpPrefix (Symbol "p") TfNe (Symbol "null")))
+  -- let assumps = SpecAnd assump3 (SpecOr assump1 assump2)
+  --           --  (SItem
+  --           --     (RouterState
+  --           --        (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p")))))
+  --           --  (SpecOr
+  --           --     (SItem
+  --           --        (RouterState
+  --           --           (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p"))))
+  --           --     (SItem
+  --           --        (RouterState
+  --           --           (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "null"))))))
+  -- putStrLn $ "Assump: \n" ++ show assumps ++ "\n"
+
+--   let ssTfs =
+--   putStrLn $ unlines (map show specCond)
 mainBgp2 :: FilePath -> IO ()
 mainBgp2 condOutPath = do
   -- 0 -- internal
@@ -163,39 +202,17 @@ mainBgp2 condOutPath = do
         , (Session 2 Import 6, rm2ImpProv2)
         , (Session 1 Export 4, rm1ExpCusto)
         ]
---   let tmp = addRouterConfig intRs [] (Session 1 Export 4) rm1ExpCusto
---   print tmp
   let ssTfs =
         foldl' (\acc (s, a) -> addRouterConfig intRs acc s a) [] allConfigs
-  putStrLn $ unlines (map show ssTfs)
---   print (getSimpleDefaultSsProtoTf intRs (Session 3 Export 0) (head ssTfs))
---   print (getSimpleDefaultSsProtoTf intRs (Session 0 Import 3) (head ssTfs))
---   print (findSsTf (Session 3 Export 0) ssTfs)
---   print (findSsTf (Session 0 Import 3) ssTfs)
---   let tmp = toRouterTf 1 intRs (getNbs conns 1) ssTfs
---   print tmp
-
---   print $ getSimpleDefaultSsProtoTf intRs (Session 1 Export 5) (head ssTfs)
---   print (findSsTf intRs (Session 1 Import 4) ssTfs)
-  let rTfs = map (\rId -> toRouterTf rId intRs (getNbs conns rId) ssTfs) (intRs ++ extRs)
-  putStrLn $ unlines (map show rTfs)
+  let rTfs =
+        map
+          (\rId -> toRouterTf rId intRs (getNbs conns rId) ssTfs)
+          (intRs ++ extRs)
   let netTf = toNetProtoTf rTfs
-  print netTf
-
-
   -- print one session tf per line
-
   -- map each router to its router tf
---   let toRTf rId = toRouterTf rId intRs (getNbs conns rId) ssTfs
---   let rTfs = map toRTf (intRs ++ extRs)
---   putStrLn $ "Router tfs: \n" ++ unlines (map show rTfs)
---   print rTfs
   -- get the network tf
---   let netTf = toNetProtoTf rTfs
---   print netTf
-
   -- get the last clause of netTf
---   assumps: each external router has a unique BgpOrigin
   let assump1 =
         SItem
           (RouterState (toAttrSpec BgpIpPrefix (Router 5) TfEq (Symbol "p")))
@@ -230,12 +247,34 @@ mainBgp2 condOutPath = do
   --            (SItem
                 -- (RouterState (toAttrSpec BgpOrigin (Router 7) TfEq (Const "6")))))
   let specs =
-        SItem (RouterState (toAttrSpec BgpNextHop (Router (getExtId 4)) TfEq (Symbol "p")))
+        SItem
+          (RouterState
+             (toAttrSpec BgpNextHop (Router (getExtId 4)) TfEq (Symbol "p")))
   putStrLn $ "Spec: \n" ++ show specs
   let specCond = toSpecCond netTf assumps specs
---   putStrLn $ unlines (map show specCond)
   writeListToFile condOutPath specCond
 
+--   let tmp = addRouterConfig intRs [] (Session 1 Export 4) rm1ExpCusto
+--   print tmp
+--   putStrLn $ unlines (map show ssTfs)
+--   print (getSimpleDefaultSsProtoTf intRs (Session 3 Export 0) (head ssTfs))
+--   print (getSimpleDefaultSsProtoTf intRs (Session 0 Import 3) (head ssTfs))
+--   print (findSsTf (Session 3 Export 0) ssTfs)
+--   print (findSsTf (Session 0 Import 3) ssTfs)
+--   let tmp = toRouterTf 1 intRs (getNbs conns 1) ssTfs
+--   print tmp
+--   print $ getSimpleDefaultSsProtoTf intRs (Session 1 Export 5) (head ssTfs)
+--   print (findSsTf intRs (Session 1 Import 4) ssTfs)
+--   putStrLn $ unlines (map show rTfs)
+--   print netTf
+--   let toRTf rId = toRouterTf rId intRs (getNbs conns rId) ssTfs
+--   let rTfs = map toRTf (intRs ++ extRs)
+--   putStrLn $ "Router tfs: \n" ++ unlines (map show rTfs)
+--   print rTfs
+--   let netTf = toNetProtoTf rTfs
+--   print netTf
+--   assumps: each external router has a unique BgpOrigin
+--   putStrLn $ unlines (map show specCond)
 --   -- link tfs
 --   -- 1 <-- cust
 --   let link1Cust =
@@ -476,4 +515,4 @@ main :: IO ()
 main = do
       -- mainBgp2 "test.txt"
   [condOutPath] <- getArgs
-  mainBgp2 condOutPath
+  evalAbilene condOutPath

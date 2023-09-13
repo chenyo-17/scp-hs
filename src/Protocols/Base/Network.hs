@@ -1,12 +1,15 @@
 module Protocols.Base.Network where
 
-import           Data.Maybe            (mapMaybe)
+import           Control.Parallel.Strategies                    
+import           Data.Maybe                                     (catMaybes,
+                                                                 mapMaybe)
 import           Functions.Transfer
 import           Protocols.Base.Router
+import Utilities.Parallel
 
-newtype NetProtoTf =
-  NetProtoTf {nTf :: Tf}
-  deriving (Eq)
+newtype NetProtoTf = NetProtoTf
+  { nTf :: Tf
+  } deriving (Eq)
 
 instance Show NetProtoTf where
   show (NetProtoTf tf) = "netTf:\n" ++ show tf
@@ -14,7 +17,9 @@ instance Show NetProtoTf where
 type FixedPoints = [TfCondition]
 
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
-toNetProtoTf rTfs = NetProtoTf $ Tf (mapMaybe mergeRTfs prodTfClauses)
+toNetProtoTf rTfs =
+  NetProtoTf
+    $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
   where
     prodTfClauses :: [[TfClause]]
     prodTfClauses = mapM (tfClauses . rTf) rTfs
