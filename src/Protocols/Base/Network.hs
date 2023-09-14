@@ -6,6 +6,8 @@ import           Data.Maybe                                     (catMaybes,
 import           Functions.Transfer
 import           Protocols.Base.Router
 import Utilities.Parallel
+import qualified Streamly.Prelude as S
+import Streamly
 
 newtype NetProtoTf = NetProtoTf
   { nTf :: Tf
@@ -15,14 +17,21 @@ instance Show NetProtoTf where
   show (NetProtoTf tf) = "netTf:\n" ++ show tf
 
 type FixedPoints = [TfCondition]
+chunks :: Int -> [a] -> [[a]]
+chunks _ [] = []
+chunks n xs = take n xs : chunks n (drop n xs)
 
 toNetProtoTf :: [RouterProtoTf] -> NetProtoTf
 toNetProtoTf rTfs =
-  NetProtoTf
-    $ Tf (mapMaybe mergeRTfs prodTfClauses `using` parListChunk chunkSize rpar)
+  NetProtoTf $ Tf $ concat $ parMap rseq processChunk (chunks 1000 prodTfClauses)
   where
+    -- prodTfClauses :: [[TfClause]]
+    -- prodTfClauses = mapM (tfClauses . rTf) rTfs
     prodTfClauses :: [[TfClause]]
-    prodTfClauses = mapM (tfClauses . rTf) rTfs
+    prodTfClauses = sequence (map (tfClauses .rTf) rTfs)
+    
+    processChunk :: [[TfClause]] -> [TfClause]
+    processChunk chunk = catMaybes $ map mergeRTfs chunk
     -- given a list of tf clauses, merge them to a net tf clause
     mergeRTfs :: [TfClause] -> Maybe TfClause
     -- not add false conditions
