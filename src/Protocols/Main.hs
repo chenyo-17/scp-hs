@@ -7,7 +7,7 @@ import           Control.Exception
 import           Control.Parallel.Strategies
 import           Data.List                   (foldl')
 import           Data.Time.Clock
-import           Functions.Solver            (simplifyCondWithSolver)
+-- import           Functions.Solver            (simplifyCondWithSolver)
 import           Functions.Transfer
 import           Protocols.BGP
 import           Protocols.Base.Network
@@ -105,6 +105,7 @@ evalAbilene condOutPath = do
          rseq
          (\rId -> toRouterTf rId intRs (getNbs conns rId) ssTfs)
          (intRs ++ extRs)
+--   putStrLn $ unlines (map show rTfs)
 --   print rTfs
 --   putStrLn $ "Time to add router tfs: " ++ show elapsed
   let netTf = toNetProtoTf rTfs
@@ -515,4 +516,5 @@ main :: IO ()
 main = do
       -- mainBgp2 "test.txt"
   [condOutPath] <- getArgs
+--   mainBgp2 condOutPath
   evalAbilene condOutPath

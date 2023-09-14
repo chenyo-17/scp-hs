@@ -22,13 +22,14 @@ fi
 # and also save the output to a file while printing to stdout
 HS_COND='hs-conds.txt'
 HS_OUT='hs-out.txt'
-cabal run protocol -- $HS_COND +RTS -N16 | tee $HS_OUT
+cabal configure --enable-profiling 
+cabal run protocol -- $HS_COND +RTS -p -N16 | tee $HS_OUT
 
 # generate sympt condition file
 
-pipenv run python -c "from simplify import simplify_condition; simplify_condition('$HS_COND', '$1')"
+# pipenv run python -c "from simplify import simplify_condition; simplify_condition('$HS_COND', '$1')"
 
 # show the result
 echo ""
 echo "Final conditions:" | tee -a $HS_OUT
-cat $1 | tee -a $HS_OUT
+# cat $1 | tee -a $HS_OUT

@@ -1,7 +1,14 @@
 module Functions.Transfer where
 
-import           Data.List (intercalate)
+import           Control.Parallel            (par, pseq)
+import           Control.Parallel.Strategies
+import qualified Data.HashMap.Strict         as HashMap
+import           Data.List                   (intercalate, foldl')
+import           Data.List.Split
+import qualified Data.Map                    as Map
+import           Data.Maybe
 import           Data.Word
+import           Utilities.Parallel
 
 data TfExpr
   = TfVar String
@@ -240,34 +247,90 @@ simplifyCond cond =
     TfNot (TfImply c1 c2) -> simplifyCond $ TfAnd c1 (TfNot c2)
     _ -> cond
 
--- substitute the variable in the condition with the assign
--- and simplify the condition
--- TODO: support numeric conditions, e.g., a + 10 > 20 && a < 10
+-- assignMap :: [TfAssignItem] -> Map.Map String TfExpr
+-- assignMap items =
+--   Map.fromList $ concat $ parMap rseq convertChunk (chunksOf chunkSize items)
+--   where
+--     convertChunk = mapMaybe convert
+--     convert (TfAssignItem (TfVar v) e) = Just (v, e)
+--     convert _                          = Nothing
+-- -- assignMap :: [TfAssignItem] -> Map.Map String TfExpr
+-- -- assignMap = Map.fromList . map (\(TfAssignItem (TfVar v) e) -> (v, e))
+-- substEachOpt :: Map.Map String TfExpr -> TfCondition -> TfCondition
+-- substEachOpt _ TfFalse = TfFalse
+-- substEachOpt m (TfCond (TfVar v1) op e2) =
+--   case Map.lookup v1 m of
+--     Just e  -> TfCond e op e2
+--     Nothing -> TfCond (TfVar v1) op e2
+-- substEachOpt m (TfCond e1 op (TfVar v2)) =
+--   case Map.lookup v2 m of
+--     Just e  -> TfCond e1 op e
+--     Nothing -> TfCond e1 op (TfVar v2)
+-- substEachOpt m (TfNot c) = TfNot (substEachOpt m c)
+-- substEachOpt m (TfAnd c1 c2) = TfAnd (substEachOpt m c1) (substEachOpt m c2)
+-- substEachOpt m (TfOr c1 c2) = TfOr (substEachOpt m c1) (substEachOpt m c2)
+-- substEachOpt m (TfImply c1 c2) = TfImply (substEachOpt m c1) (substEachOpt m c2)
+-- substEachOpt _ cond' = cond'
+-- substCond :: TfCondition -> TfAssign -> TfCondition
+-- substCond _ TfAssignNull = TfFalse
+-- substCond cond (TfAssign as) =
+--   let m = assignMap as
+--    in simplifyCond $ substEachOpt m cond
 substCond :: TfCondition -> TfAssign -> TfCondition
--- if the assign of export (first clause) is null
--- then the new condition is always false
 substCond _ TfAssignNull = TfFalse
--- not use map as it has sharing
-substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
+substCond cond (TfAssign as) =
+  assignMap
+    `par` (substFromMap cond assignMap
+             `pseq` simplifyCond (substFromMap cond assignMap))
   where
-    -- substitute all instances of v in cond
-    substEach :: TfAssignItem -> TfCondition -> TfCondition
-    substEach _ TfFalse = TfFalse
-    substEach a@(TfAssignItem (TfVar v) e) cond' =
-      case cond' of
-        -- the variable can only appears in TfCond as a single var
-        TfCond (TfVar v') op e2
-          | v == v' -> TfCond e op e2
-        TfCond e1 op (TfVar v')
-          | v == v' -> TfCond e1 op e
-        TfNot c -> TfNot (substEach a c)
-        TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
-        TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
-        TfImply c1 c2 -> TfImply (substEach a c1) (substEach a c2)
-        _ -> cond'
-    -- the key in an tfAssign must be a var
-    substEach _ cond' = cond'
+    -- Create a map from the assignment for O(1) lookups.
+    -- assignMap = Map.fromList [(v, e) | TfAssignItem (TfVar v) e <- as]
+    toPair (TfAssignItem (TfVar v) e) = (v, e)
+    assignMap =
+      foldl'
+        (\acc item -> Map.insert (fst item) (snd item) acc)
+        Map.empty
+        (map toPair as)
+    substFromMap :: TfCondition -> Map.Map String TfExpr -> TfCondition
+    substFromMap TfFalse _ = TfFalse
+    substFromMap (TfCond (TfVar v) op e2) m
+      | Just expr <- Map.lookup v m = TfCond expr op e2
+    substFromMap (TfCond e1 op (TfVar v)) m
+      | Just expr <- Map.lookup v m = TfCond e1 op expr
+    substFromMap (TfNot c) m = TfNot (substFromMap c m)
+    substFromMap (TfAnd c1 c2) m = TfAnd (substFromMap c1 m) (substFromMap c2 m)
+    substFromMap (TfOr c1 c2) m = TfOr (substFromMap c1 m) (substFromMap c2 m)
+    substFromMap (TfImply c1 c2) m =
+      TfImply (substFromMap c1 m) (substFromMap c2 m)
+    substFromMap c _ = c -- If no substitution, return the condition unchanged.
 
+-- -- substitute the variable in the condition with the assign
+-- -- and simplify the condition
+-- -- TODO: support numeric conditions, e.g., a + 10 > 20 && a < 10
+-- substCond :: TfCondition -> TfAssign -> TfCondition
+-- -- if the assign of export (first clause) is null
+-- -- then the new condition is always false
+-- substCond _ TfAssignNull = TfFalse
+-- -- not use map as it has sharing
+-- substCond cond (TfAssign as) = simplifyCond $ foldr substEach cond as
+--   where
+--     -- substitute all instances of v in cond
+--     substEach :: TfAssignItem -> TfCondition -> TfCondition
+--     substEach _ TfFalse = TfFalse
+--     substEach a@(TfAssignItem (TfVar v) e) cond' =
+--       case cond' of
+--         -- the variable can only appears in TfCond as a single var
+--         TfCond (TfVar v') op e2
+--           | v == v' -> TfCond e op e2
+--         TfCond e1 op (TfVar v')
+--           | v == v' -> TfCond e1 op e
+--         TfNot c -> TfNot (substEach a c)
+--         TfAnd c1 c2 -> TfAnd (substEach a c1) (substEach a c2)
+--         TfOr c1 c2 -> TfOr (substEach a c1) (substEach a c2)
+--         TfImply c1 c2 -> TfImply (substEach a c1) (substEach a c2)
+--         _ -> cond'
+--     -- the key in an tfAssign must be a var
+--     substEach _ cond' = cond'
 -- given a tf clause, convert its assign to condition and concat it with condition
 -- e.g., a := b -> a == b
 -- also substitute the condition with the assign in best effort to simplify it
@@ -437,4 +500,3 @@ instance Show TfClause where
 
 instance Show Tf where
   show (Tf clauses) = unlines $ map show clauses
-
